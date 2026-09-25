@@ -10,7 +10,7 @@ live build status, screen tools and more. Native Swift & SwiftUI, 100% on-device
 
 <img src="docs/islandly-demo.gif" alt="Islandly demo" width="720">
 
-🎬 Full launch film (with voice-over) in [Releases](../../releases).
+🎬 Full launch film (with voice-over) in [Releases](../../releases) · 🤝 [Contributions welcome](CONTRIBUTING.md)
 
 </div>
 
@@ -125,9 +125,19 @@ scripts/        release.sh → dist/Islandly-<version>.zip for GitHub Releases
 docs/           README media
 ```
 
+## Contributing
+
+Found a bug or have an idea? Contributions are very welcome:
+
+- 🐛 **Report a bug** or 💡 **suggest a feature** in [Issues](../../issues)
+- 🔧 **Send a fix** — fork the repo, make your change on a branch, and open a pull request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, the guidelines, and what to include.
+
 ## License
 
-[MIT](LICENSE) © 2026 Muhammad Zayan
+Islandly is **source-available**: you're welcome to read the code, fork it, and contribute via pull requests.
+Other use or redistribution requires permission — see [LICENSE](LICENSE). © 2026 Muhammad Zayan. All rights reserved.
 
 <sub>Islandly is an independent project and is not affiliated with Apple Inc. Dynamic Island, MacBook and macOS are
 trademarks of Apple Inc.</sub>
