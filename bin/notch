@@ -1,0 +1,44 @@
+#!/bin/bash
+# notch — run any command and watch it live in Islandly.
+#   notch npm run build
+#   notch python3 manage.py test
+#   notch git push
+# Output, colors and the exit code pass through unchanged.
+
+if [ $# -eq 0 ]; then
+    echo "usage: notch <command> [args...]" >&2
+    exit 64
+fi
+
+# Find Islandly: next to this script (repo checkout, even via a symlink), else the usual install locations.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REPO="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+BIN=""
+for app in "$REPO/build/Islandly.app" "/Applications/Islandly.app" "$HOME/Applications/Islandly.app"; do
+    if [ -x "$app/Contents/MacOS/Islandly" ]; then BIN="$app/Contents/MacOS/Islandly"; break; fi
+done
+[ -z "$BIN" ] && echo "notch: Islandly.app not found (build it with ./build.sh, or install it in /Applications) — running anyway" >&2
+
+ID="$$-$(date +%s)"
+LOG="$(mktemp -t notch)"
+trap 'rm -f "$LOG"' EXIT
+
+[ -n "$BIN" ] && "$BIN" --notify start "$ID" "$$" "$*" "$PWD" >/dev/null 2>&1
+
+# `script` keeps a real terminal for the command (colors, progress bars) while logging its output.
+script -q "$LOG" "$@"
+STATUS=$?
+
+# Last meaningful line: prefer one mentioning an error, else the final line. Strip colors/CRs.
+CLEAN="$(perl -pe 's/\e\[[0-9;?]*[A-Za-z]//g; s/\r//g' "$LOG" | grep -v '^[[:space:]]*$' | grep -v '^\^D')"
+LAST="$(printf '%s\n' "$CLEAN" | grep -iE 'error|failed|exception|✗|✘' | grep -viE 'complete log|npm error (code|errno|syscall|path)' | tail -n 1)"
+[ -z "$LAST" ] && LAST="$(printf '%s\n' "$CLEAN" | tail -n 1)"
+LAST="$(printf '%s' "$LAST" | cut -c1-200)"
+
+[ -n "$BIN" ] && "$BIN" --notify finish "$ID" "$STATUS" "$LAST" >/dev/null 2>&1
+exit $STATUS

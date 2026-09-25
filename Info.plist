@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>app.islandly</string>
+	<key>CFBundleName</key>
+	<string>Islandly</string>
+	<key>CFBundleDisplayName</key>
+	<string>Islandly</string>
+	<key>CFBundleExecutable</key>
+	<string>Islandly</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Muhammad Zayan. MIT License.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Islandly reads the current track from Music, Spotify or YouTube in Chrome and controls playback, and switches Dark Mode.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Islandly shows your next meeting with a one-click Join button.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Islandly shows your next meeting with a one-click Join button.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Transcribes audio on your Mac for Name Alert and the voice-following teleprompter. Nothing is recorded or stored.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The teleprompter listens to your voice to scroll the script at your pace.</string>
+</dict>
+</plist>
