@@ -10,7 +10,7 @@ live build status, screen tools and more. Native Swift & SwiftUI, 100% on-device
 
 <img src="docs/islandly-demo.gif" alt="Islandly demo" width="720">
 
-🎬 Full launch film (with voice-over) in [Releases](../../releases) · 🤝 [Contributions welcome](CONTRIBUTING.md)
+⚡ [Quick start](#quick-start) · 🤝 [Contributions welcome](CONTRIBUTING.md)
 
 </div>
 
@@ -33,42 +33,51 @@ live build status, screen tools and more. Native Swift & SwiftUI, 100% on-device
 | ☕ **Keep Awake** | Stop your Mac from sleeping for 30 min, 1 h, 2 h or until turned off. |
 | 🔋 **Live activities** | Charging, song changes, timer done, meeting starting — little pop-ups under the notch. |
 
+## Quick start
+
+You need **macOS 26 (Tahoe)** and Apple's free command-line tools (`xcode-select --install` if you don't have them).
+
+```bash
+git clone https://github.com/Zayan-dev/islandly.git
+cd islandly
+./scripts/install.sh
+```
+
+That builds Islandly, installs it in **Applications**, sets up the `notch` command and launches it.
+**Hover over your notch** — that's it. Each feature asks for its permission the first time you use it.
+
+> **Using YouTube?** It's the one step that isn't automatic: in Chrome's menu bar enable
+> **View → Developer → Allow JavaScript from Apple Events**.
+
+To launch it automatically: **System Settings → General → Login Items → + → Islandly**.
+
+<details>
+<summary><b>Update · uninstall · manual build</b></summary>
+
+```bash
+git pull && ./scripts/install.sh      # update to the latest version
+./scripts/uninstall.sh                # remove the app and the notch command (add --all to also reset settings & permissions)
+./build.sh && open build/Islandly.app # build without installing (universal: Apple Silicon + Intel)
+```
+</details>
+
+### Optional: keep permissions across rebuilds
+macOS ties privacy permissions to the app's signature. Without a signing certificate, each rebuild looks like a new app,
+so you'd re-grant Screen Recording, Automation, etc. after every update. A free self-signed certificate fixes it
+(one minute, one time):
+
+1. **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
+2. Name **`Islandly Dev`** · Identity Type **Self-Signed Root** · Certificate Type **Code Signing** → **Create**.
+3. Run `./scripts/install.sh` again — builds are now signed with it automatically.
+
 ## Requirements
 
 | | |
 |---|---|
 | **macOS 26 (Tahoe)** or later | Uses Liquid Glass and newer ScreenCaptureKit / Core Audio APIs. |
-| **Apple Silicon or Intel** | The build is universal. |
+| **Apple Silicon or Intel** | `install.sh` builds for your Mac; `build.sh` builds a universal app. |
 | A **MacBook with a notch** is ideal | On other Macs it appears as a pill at the top of the screen. |
 | **Google Chrome** | Only needed for YouTube control (Music and Spotify work directly). |
-| **Xcode Command Line Tools** | To build from source: `xcode-select --install` (no full Xcode needed). |
-
-## Install
-
-### Download (easiest)
-1. Grab `Islandly-x.y.z.zip` from [Releases](../../releases) and unzip it.
-2. Move **Islandly.app** to **Applications** and open it.
-3. The app isn't notarized yet, so macOS will block the first launch: open **System Settings → Privacy & Security** and click **Open Anyway**.
-
-### Build from source
-```bash
-git clone https://github.com/<you>/islandly.git
-cd islandly
-./build.sh            # universal app → build/Islandly.app  (ARCHS=arm64 ./build.sh for a faster, single-arch build)
-open build/Islandly.app
-```
-
-To start it automatically: **System Settings → General → Login Items → +** and pick Islandly.
-
-### Keep permissions across rebuilds (recommended for developers)
-macOS ties privacy permissions to an app's code signature. Without a certificate, each build gets a new temporary
-signature and **you'd have to re-grant Screen Recording, Automation, etc. after every rebuild**. A free self-signed
-certificate fixes that:
-
-1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
-2. Name: **`Islandly Dev`** · Identity Type: **Self-Signed Root** · Certificate Type: **Code Signing** → **Create**.
-3. Rebuild with `./build.sh` — it signs with `Islandly Dev` automatically
-   (or set `ISLANDLY_SIGN_IDENTITY="Your Cert Name"`).
 
 ## Permissions
 
@@ -87,14 +96,14 @@ After granting **Screen Recording**, restart the app (right-click the notch → 
 
 ## The `notch` command
 
+Prefix any long-running command and watch it in the notch (installed by `install.sh`):
+
 ```bash
-echo 'export PATH="/path/to/islandly/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 notch npm run build
 notch python3 manage.py test
 notch git push
 ```
-Output, colors and exit codes pass through unchanged. `notch` finds Islandly next to the repo (`build/Islandly.app`)
-or in `/Applications`.
+Output, colors and exit codes pass through unchanged — you get a ✅ or ❌ with the error line when it finishes.
 
 ## Privacy & performance
 
@@ -113,7 +122,8 @@ or in `/Applications`.
 | Grab Text says "Nothing readable found" | Grant **Screen & System Audio Recording**, then **Restart Islandly** |
 | Permissions keep resetting after each build | Create the `Islandly Dev` certificate (see above) |
 | Name Alert misses your name | Names at the very start of a sentence are sometimes dropped by the recognizer; add nicknames as keywords |
-| Island stuck or misbehaving | Right-click the notch → **Restart Islandly**, or `pkill -x Islandly; open build/Islandly.app` |
+| Island stuck or misbehaving | Right-click the notch → **Restart Islandly**, or `pkill -x Islandly; open -a Islandly` |
+| `notch: command not found` | Run the PATH line printed at the end of `install.sh`, or open a new terminal |
 
 ## Project layout
 
@@ -121,7 +131,7 @@ or in `/Applications`.
 Sources/        Swift sources (SwiftUI views, models, ScreenCaptureKit / Vision / Speech integrations)
 bin/notch       CLI wrapper for build live activities
 build.sh        Builds a universal, signed Islandly.app
-scripts/        release.sh → dist/Islandly-<version>.zip for GitHub Releases
+scripts/        install.sh / uninstall.sh, and release.sh (optional zip for GitHub Releases)
 docs/           README media
 ```
 
