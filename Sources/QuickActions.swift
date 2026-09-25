@@ -42,17 +42,6 @@ enum HomePanel: Equatable {
     }
 }
 
-@discardableResult
-func runTool(_ path: String, _ args: [String]) -> Int32 {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: path)
-    process.arguments = args
-    process.standardOutput = Pipe()
-    process.standardError = Pipe()
-    do { try process.run() } catch { return -1 }
-    process.waitUntilExit()
-    return process.terminationStatus
-}
 
 /// Needed after granting Screen Recording — macOS only applies it to a fresh process.
 func relaunchApp() {

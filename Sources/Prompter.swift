@@ -163,7 +163,7 @@ final class PrompterModel: ObservableObject {
     private func startListening() {
         AVCaptureDevice.requestAccess(for: .audio) { granted in
             LiveTranscriber.requestAuthorization { speechOK in
-                guard granted, speechOK else {
+                guard granted, speechOK, LiveTranscriber.isAvailableOnDevice else {
                     self.micDenied = true
                     self.mode = .auto
                     self.scheduleAuto()

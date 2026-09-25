@@ -230,10 +230,6 @@ final class CalendarModel: ObservableObject {
 
     private let store = EKEventStore()
     private var announced = Set<String>()
-    private static let meetingHosts = [
-        "zoom.us", "meet.google.com", "teams.microsoft.com", "teams.live.com",
-        "webex.com", "whereby.com", "around.co", "chime.aws",
-    ]
 
     func start() {
         store.requestFullAccessToEvents { granted, _ in
@@ -267,14 +263,20 @@ final class CalendarModel: ObservableObject {
         return event
     }
 
+    /// Only real meeting domains over HTTPS — calendar invites can come from anyone, so a link that merely
+    /// *mentions* "zoom.us" (e.g. https://evil.example/zoom.us) must not get a Join button.
+    static func isMeetingLink(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        let domains = ["zoom.us", "meet.google.com", "teams.microsoft.com", "teams.live.com", "webex.com", "whereby.com", "around.co", "chime.aws"]
+        return domains.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
     static func meetingURL(for event: EKEvent) -> URL? {
         let texts = [event.url?.absoluteString, event.location, event.notes].compactMap { $0 }
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
         for text in texts {
             for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-                if let url = match.url, meetingHosts.contains(where: { url.absoluteString.contains($0) }) {
-                    return url
-                }
+                if let url = match.url, isMeetingLink(url) { return url }
             }
         }
         return nil

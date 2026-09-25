@@ -156,21 +156,6 @@ if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--notify" {
     exit(0)
 }
 
-/// One-time move of settings from the pre-rename bundle ID, so existing users keep their preferences.
-func migrateLegacySettings() {
-    let defaults = UserDefaults.standard
-    guard !defaults.bool(forKey: "migratedLegacySettings") else { return }
-    if let legacy = UserDefaults(suiteName: "com.muhammadzayan.DynamicIsland")?.dictionaryRepresentation() {
-        let keys = ["shelfFiles", "prompterScript", "prompterMode", "prompterWPM", "nameAlertKeywords", "nameAlertBuzz",
-                    "nameAlertAwayAfter", "nameAlertMode", "nameAlertBrowserCalls"]
-        for key in keys where defaults.object(forKey: key) == nil {
-            if let value = legacy[key] { defaults.set(value, forKey: key) }
-        }
-    }
-    defaults.set(true, forKey: "migratedLegacySettings")
-}
-migrateLegacySettings()
-
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

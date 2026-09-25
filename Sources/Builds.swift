@@ -58,12 +58,15 @@ final class BuildModel: ObservableObject {
     }
 
     private func handle(_ info: [String: String]) {
-        guard let id = info["id"] else { return }
+        // Any local process can post this notification, so keep it bounded: short strings, few activities.
+        guard let id = info["id"], id.count <= 64 else { return }
+        func clip(_ s: String?, _ n: Int) -> String? { s.map { String($0.prefix(n)) } }
         switch info["event"] {
         case "start":
-            let cwd = info["cwd"] ?? ""
+            guard running.count < 8 else { return }
+            let cwd = clip(info["cwd"], 512) ?? ""
             let activity = BuildActivity(id: id,
-                                         command: info["command"] ?? "command",
+                                         command: clip(info["command"], 120) ?? "command",
                                          folder: URL(fileURLWithPath: cwd).lastPathComponent,
                                          pid: Int32(info["pid"] ?? "") ?? 0,
                                          start: Date())
@@ -74,7 +77,7 @@ final class BuildModel: ObservableObject {
             var activity = running.remove(at: index)
             activity.end = Date()
             activity.exitCode = Int32(info["status"] ?? "") ?? 1
-            activity.lastLine = info["line"] ?? ""
+            activity.lastLine = clip(info["line"], 200) ?? ""
             onFinish?(activity)
         default:
             break

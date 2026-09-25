@@ -122,8 +122,12 @@ final class NameAlertModel: NSObject, ObservableObject {
         starting = true
         problem = nil
         LiveTranscriber.requestAuthorization { ok in
-            guard ok else {
+            guard ok, LiveTranscriber.isAvailableOnDevice else {
                 self.starting = false
+                if ok {
+                    self.problem = "On-device speech recognition isn't available on this Mac, so Name Alert stays off (audio never leaves your Mac)."
+                    return
+                }
                 self.problem = "Allow Speech Recognition for Islandly in System Settings ▸ Privacy & Security."
                 return
             }

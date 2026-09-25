@@ -26,7 +26,14 @@ final class LiveTranscriber {
         }
     }
 
+    /// Transcription must stay on this Mac; if on-device recognition isn't available we don't start at all.
+    static var isAvailableOnDevice: Bool {
+        guard let r = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) else { return false }
+        return r.isAvailable && r.supportsOnDeviceRecognition
+    }
+
     func start() {
+        guard Self.isAvailableOnDevice else { return }
         running = true
         newSegment()
     }
@@ -68,7 +75,8 @@ final class LiveTranscriber {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.contextualStrings = contextualStrings
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        guard recognizer.supportsOnDeviceRecognition else { return }
+        request.requiresOnDeviceRecognition = true  // never send audio to a server
 
         lock.lock()
         self.request?.endAudio()
