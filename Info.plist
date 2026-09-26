@@ -6,6 +6,8 @@
 	<string>Islandly</string>
 	<key>CFBundleExecutable</key>
 	<string>Islandly</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>app.islandly</string>
 	<key>CFBundleName</key>
@@ -30,6 +32,8 @@
 	<string>Islandly shows your next meeting with a one-click Join button.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Muhammad Zayan. All rights reserved.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Islandly uses your local network only while Phone ▸ Receive or Sign is open, so your phone can send files and signatures to this Mac.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>The teleprompter listens to your voice to scroll the script at your pace.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

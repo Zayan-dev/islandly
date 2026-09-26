@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         model.system.start()
         model.calendar.start()
+        model.availability.refresh(force: true)
         model.media.refresh()
 
         // Hover is event-driven (no 33 Hz polling): react to mouse movement, plus a slow safety net.
@@ -126,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let size = model.currentSize
-        var rect = NSRect(x: screen.frame.midX - size.width / 2,
+        var rect = NSRect(x: screen.frame.midX - size.width / 2 + model.islandOffsetX,
                           y: screen.frame.maxY - size.height,
                           width: size.width, height: size.height + 2)
         if model.expanded { rect = rect.insetBy(dx: -10, dy: -10) }

@@ -56,6 +56,8 @@ final class NameAlertModel: NSObject, ObservableObject {
 
     private let calls = CallDetector()
     private var starting = false
+    /// Bumped by every start/stop; async start steps that finish after a newer stop are discarded.
+    private var generation = 0
     private var pollCount = 0
 
     private let transcriber = LiveTranscriber()
@@ -95,9 +97,20 @@ final class NameAlertModel: NSObject, ObservableObject {
     /// Called every second; call detection runs every 3 s.
     func tick() {
         pollCount += 1
-        guard pollCount % 3 == 0, mode == .auto else { return }
-        calls.poll()
-        if calls.callApp != callApp { callApp = calls.callApp }
+        guard pollCount % 3 == 0 else { return }
+        if mode == .auto {
+            calls.poll()
+            if calls.callApp != callApp { callApp = calls.callApp }
+        }
+        reconcile()
+    }
+
+    /// Self-healing: whatever happened in between, listening only continues while it should.
+    /// (Off → never; Auto → only during a call; Always → always.) Also stops an orphaned capture.
+    private func reconcile() {
+        let shouldListen = mode == .always || (mode == .auto && calls.inCall)
+        if !shouldListen && (isListening || starting) { stop() }
+        if !shouldListen && !isListening { SystemAudioTap.shared.stopIfUnused() }
     }
 
     func applyMode() {
@@ -121,7 +134,10 @@ final class NameAlertModel: NSObject, ObservableObject {
         guard !isListening, !starting else { return }
         starting = true
         problem = nil
+        generation += 1
+        let run = generation
         LiveTranscriber.requestAuthorization { ok in
+            guard run == self.generation else { return }  // stopped while asking
             guard ok, LiveTranscriber.isAvailableOnDevice else {
                 self.starting = false
                 if ok {
@@ -131,11 +147,12 @@ final class NameAlertModel: NSObject, ObservableObject {
                 self.problem = "Allow Speech Recognition for Islandly in System Settings ▸ Privacy & Security."
                 return
             }
-            self.startStream()
+            self.startStream(run)
         }
     }
 
     func stop() {
+        generation += 1
         SystemAudioTap.shared.unsubscribe("nameAlert")
         transcriber.stop()
         isListening = false
@@ -143,7 +160,7 @@ final class NameAlertModel: NSObject, ObservableObject {
         liveSnippet = ""
     }
 
-    private func startStream() {
+    private func startStream(_ run: Int) {
         transcriber.contextualStrings = keywords
         transcriber.start()
         let transcriber = self.transcriber
@@ -152,6 +169,12 @@ final class NameAlertModel: NSObject, ObservableObject {
             self?.problem = "Listening stopped: \(error.localizedDescription)"
         }, started: { [weak self] error in
             guard let self else { return }
+            guard run == self.generation else {
+                // Stopped while the capture was starting: undo instead of switching on.
+                self.transcriber.stop()
+                SystemAudioTap.shared.unsubscribe("nameAlert")
+                return
+            }
             self.starting = false
             if let error {
                 self.transcriber.stop()

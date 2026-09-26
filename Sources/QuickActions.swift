@@ -13,7 +13,7 @@ enum QuickAction: CaseIterable {
         case .colorPicker: return "Pick Color"
         case .darkMode: return "Dark Mode"
         case .grabText: return "Grab Text"
-        case .qrBeam: return "QR Beam"
+        case .qrBeam: return "Phone"
         case .prompter: return "Prompter"
         case .nameAlert: return "Name Alert"
         }
@@ -26,7 +26,7 @@ enum HomePanel: Equatable {
 
     var title: String {
         switch self {
-        case .qr: return "QR Beam"
+        case .qr: return "Phone"
         case .prompter: return "Teleprompter"
         case .nameAlert: return "Name Alert"
         }
@@ -35,9 +35,9 @@ enum HomePanel: Equatable {
     /// Height of the panel content (header included).
     var height: CGFloat {
         switch self {
-        case .qr: return 164
-        case .prompter: return 150
-        case .nameAlert: return 204
+        case .qr: return 168
+        case .prompter: return 154
+        case .nameAlert: return 208
         }
     }
 }

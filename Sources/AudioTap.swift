@@ -31,6 +31,8 @@ final class SystemAudioTap: NSObject, SCStreamOutput, SCStreamDelegate {
             self.starting = false
             let callbacks = self.pending
             self.pending = []
+            // Everyone unsubscribed while it was starting (e.g. the call ended): don't leave it running.
+            self.stopIfUnused()
             callbacks.forEach { $0(error) }
         }
     }
@@ -39,12 +41,20 @@ final class SystemAudioTap: NSObject, SCStreamOutput, SCStreamDelegate {
         lock.lock()
         handlers[id] = nil
         onError[id] = nil
+        lock.unlock()
+        stopIfUnused()
+    }
+
+    var isCapturing: Bool { stream != nil }
+
+    /// Stops the capture (and the purple menu-bar indicator) as soon as no feature needs it.
+    func stopIfUnused() {
+        lock.lock()
         let empty = handlers.isEmpty
         lock.unlock()
-        if empty {
-            stream?.stopCapture(completionHandler: nil)
-            stream = nil
-        }
+        guard empty, let stream else { return }
+        stream.stopCapture(completionHandler: nil)
+        self.stream = nil
     }
 
     @MainActor

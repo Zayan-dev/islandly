@@ -36,9 +36,34 @@ struct IslandView: View {
                 } else if let peek = model.peek {
                     PeekView(model: model, peek: peek)
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
-                } else {
-                    CollapsedView(model: model)
-                        .transition(.opacity)
+                } else if model.closedIndicator != nil || model.showsClosedArtwork {
+                    // Only the edge tabs are visible; the middle of the island sits under the notch.
+                    HStack(spacing: 0) {
+                        if model.showsClosedArtwork, let track = model.media.track {
+                            Artwork(model: model, track: track, size: 20)
+                                .frame(width: IslandModel.indicatorPeek)
+                                .padding(.leading, 2)
+                        }
+                        Spacer(minLength: 0)
+                        if let indicator = model.closedIndicator {
+                        Group {
+                            switch indicator {
+                            case .wave:
+                                Image(systemName: "waveform")
+                                    .foregroundStyle(.green)
+                                    .symbolEffect(.variableColor.iterative, isActive: true)
+                            case .receiving:
+                                Image(systemName: "iphone.and.arrow.forward")
+                                    .foregroundStyle(.teal)
+                            }
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: IslandModel.indicatorPeek)
+                        .padding(.trailing, 2)
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+                    .transition(.opacity)
                 }
             }
             .overlay {
@@ -53,6 +78,7 @@ struct IslandView: View {
             .frame(width: model.currentSize.width + (model.mentionFlash ? 36 : 0),
                    height: model.currentSize.height + (model.mentionFlash ? 6 : 0))
             .clipShape(shape)
+            .offset(x: model.islandOffsetX)
             .overlay {
                 if model.dropTargeted {
                     shape.stroke(Color.accentColor, lineWidth: 2)
@@ -84,63 +110,6 @@ struct IslandView: View {
             if targeted { model.tab = .shelf }
         }
         .environment(\.colorScheme, .dark)
-    }
-}
-
-// MARK: - Collapsed (idle)
-
-struct CollapsedView: View {
-    @ObservedObject var model: IslandModel
-
-    var body: some View {
-        HStack {
-            switch model.leftSlot {
-            case .artwork:
-                if let track = model.media.track { Artwork(model: model, track: track, size: 20) }
-            case .timerRing:
-                let timer = model.timer
-                ZStack {
-                    Circle().stroke(.white.opacity(0.2), lineWidth: 2.5)
-                    Circle()
-                        .trim(from: 0, to: timer.total > 0 ? timer.remaining(at: model.system.now) / timer.total : 0)
-                        .stroke(Color.orange, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
-                .frame(width: 15, height: 15)
-            case .build:
-                ProgressView().controlSize(.mini).tint(.white)
-            case .listening:
-                Image(systemName: "ear.fill")
-                    .foregroundStyle(.purple)
-                    .symbolEffect(.pulse, isActive: true)
-            case .none:
-                EmptyView()
-            }
-            Spacer()
-            switch model.rightSlot {
-            case .countdown:
-                Text(formatCountdown(model.timer.remaining(at: model.system.now)))
-                    .foregroundStyle(model.timer.isPaused ? .secondary : Color.orange)
-                    .monospacedDigit()
-            case .buildElapsed:
-                if let build = model.builds.running.first {
-                    Text(formatDuration(max(0, model.system.now.timeIntervalSince(build.start))))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .monospacedDigit()
-                }
-            case .waveform:
-                if let track = model.media.track {
-                    Image(systemName: track.isPlaying ? "waveform" : "pause.fill")
-                        .foregroundStyle(track.isPlaying ? .green : .secondary)
-                        .symbolEffect(.variableColor.iterative, isActive: track.isPlaying)
-                }
-            case .none:
-                EmptyView()
-            }
-        }
-        .font(.system(size: 12, weight: .semibold, design: .rounded))
-        .padding(.horizontal, 12)
-        .frame(height: model.notchSize.height)
     }
 }
 
@@ -218,6 +187,29 @@ struct PeekView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Spacer()
+
+            case .signature:
+                Image(systemName: "signature")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.teal)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Signature copied").font(.system(size: 13, weight: .semibold))
+                    Text("Paste it into any document with ⌘V").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+
+            case .phoneReceived(let name, let isText):
+                Image(systemName: isText ? "text.bubble.fill" : "iphone.and.arrow.forward")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.teal)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(isText ? "Text from your phone" : "From your phone").font(.system(size: 13, weight: .semibold))
+                    Text(isText ? "“\(name)” · open Phone to copy it" : "\(name) · on the Shelf")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
 
             case .textGrabbed(let preview, let lines):
                 Image(systemName: "text.viewfinder")
@@ -321,7 +313,7 @@ struct ExpandedView: View {
                 }
             }
             .frame(height: model.notchSize.height)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 18)
 
             Group {
                 switch model.tab {
@@ -329,6 +321,7 @@ struct ExpandedView: View {
                 case .timer: TimerView(model: model)
                 case .shelf: ShelfView(model: model)
                 case .clipboard: ClipboardView(model: model)
+                case .dev: DevServersView(model: model)
                 }
             }
             .id(model.tab)
@@ -432,13 +425,13 @@ struct TabBar: View {
     @ObservedObject var model: IslandModel
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             ForEach(IslandTab.allCases, id: \.self) { tab in
                 let selected = model.tab == tab
                 Button { Haptics.tap(); model.tab = tab } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 25, height: 22)
+                        .frame(width: 22, height: 22)
                         .background(Capsule().fill(.white.opacity(selected ? 0.22 : 0)))
                         .foregroundStyle(selected ? .white : .secondary)
                         .overlay(alignment: .topTrailing) {
@@ -527,7 +520,7 @@ struct QuickActionsRow: View {
         case .colorPicker: return "eyedropper.halffull"
         case .darkMode: return on ? "moon.fill" : "sun.max.fill"
         case .grabText: return "text.viewfinder"
-        case .qrBeam: return "qrcode"
+        case .qrBeam: return "iphone.gen3.radiowaves.left.and.right"
         case .prompter: return "text.aligncenter"
         case .nameAlert: return on && model.nameAlert.isListening ? "ear.fill" : "person.wave.2.fill"
         }
@@ -551,7 +544,8 @@ struct QuickActionsRow: View {
                 QuickActionTile(symbol: symbol(action, on: on),
                                 label: action.label,
                                 isOn: on,
-                                onTint: accent(action)) {
+                                onTint: accent(action),
+                                status: model.availability.status(for: action)) {
                     Haptics.tap()
                     model.perform(action)
                 }
@@ -570,14 +564,23 @@ struct HomePanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SectionTitle(text: panel.title)
+                if panel == .qr {
+                    PhoneModePicker(model: model)
+                } else {
+                    SectionTitle(text: panel.title)
+                }
                 Spacer()
                 IconButton(symbol: "xmark", help: "Close") { model.homePanel = nil }
             }
-            .frame(height: 20)
+            .frame(height: 24)
             Group {
                 switch panel {
-                case .qr: QRPanel(model: model)
+                case .qr:
+                    switch model.phoneMode {
+                    case .send: QRPanel(model: model)
+                    case .receive: ReceivePanel(model: model)
+                    case .sign: SignPanel(model: model)
+                    }
                 case .prompter: PrompterPanel(model: model)
                 case .nameAlert: NameAlertPanel(model: model)
                 }
@@ -592,8 +595,11 @@ struct QRPanel: View {
     @ObservedObject var model: IslandModel
 
     var body: some View {
-        let scanned = model.qrScanResult
-        let text = scanned ?? model.clipboard.items.first
+        let servers = model.devServers.servers.filter(\.isWeb)
+        let server = servers.first { $0.id == model.qrServerID }
+        let lan = server.flatMap { $0.onNetwork ? DevServerModel.lanAddress() : nil }
+        let scanned = server == nil ? model.qrScanResult : nil
+        let text: String? = server != nil ? lan.map { "http://\($0):\(server!.port)" } : (scanned ?? model.clipboard.items.first)
         HStack(alignment: .top, spacing: 14) {
             Group {
                 if let text, let image = model.qrImage(for: text) {
@@ -605,30 +611,93 @@ struct QRPanel: View {
                 } else {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(.white.opacity(0.08))
-                        .overlay(Image(systemName: "qrcode").font(.system(size: 34)).foregroundStyle(.secondary))
+                        .overlay(Image(systemName: server != nil ? "lock.fill" : "qrcode").font(.system(size: 34)).foregroundStyle(.secondary))
                 }
             }
             .frame(width: 128, height: 128)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(scanned != nil ? "Scanned from your screen" : (text == nil ? "Nothing copied yet" : "Your clipboard, ready to scan"))
+            VStack(alignment: .leading, spacing: 7) {
+                Text(headline(server: server, lan: lan, scanned: scanned, text: text))
                     .font(.system(size: 12, weight: .semibold))
-                Text(text ?? "Copy a link or any text and point your phone's camera at the code.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(1)
+                Group {
+                    if let server, !server.onNetwork {
+                        Text("Localhost only. Run \(Text(PhonePanel.restartHint(for: server)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.cyan))")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(text ?? (server != nil ? "Connect this Mac to Wi-Fi first." : "Copy a link or any text and point your phone's camera at the code."))
+                            .foregroundStyle(server != nil ? .cyan : .secondary)
+                    }
+                }
+                .font(.system(size: 11, design: server?.onNetwork == true ? .monospaced : .default))
+                .lineLimit(3)
                 Spacer(minLength: 0)
+                if !servers.isEmpty {
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(servers) { s in
+                                    ServerChip(server: s, selected: s.id == server?.id) {
+                                        Haptics.tap()
+                                        model.qrServerID = s.id == server?.id ? nil : s.id
+                                    }
+                                    .id(s.id)
+                                }
+                            }
+                        }
+                        .onAppear { if let id = server?.id { proxy.scrollTo(id) } }
+                        .onChange(of: model.qrServerID) { _, id in
+                            if let id { withAnimation { proxy.scrollTo(id) } }
+                        }
+                    }
+                }
                 HStack(spacing: 8) {
                     if let text, let url = URL(string: text), url.scheme?.hasPrefix("http") == true {
                         PillButton(title: "Open", symbol: "arrow.up.right", tint: .blue) { NSWorkspace.shared.open(url) }
                     }
-                    if scanned != nil {
-                        PillButton(title: "Clipboard", symbol: "doc.on.clipboard") { model.qrScanResult = nil }
+                    if scanned != nil || server != nil {
+                        PillButton(title: "Clipboard", symbol: "doc.on.clipboard") {
+                            model.qrScanResult = nil
+                            model.qrServerID = nil
+                        }
                     }
                 }
             }
             .frame(maxHeight: 128)
         }
+        .onAppear { model.devServers.refresh() }
+    }
+
+    private func headline(server: DevServer?, lan: String?, scanned: String?, text: String?) -> String {
+        if let server { return lan != nil || !server.onNetwork ? "\(server.title) on your phone" : "\(server.title) · no Wi-Fi" }
+        if scanned != nil { return "Scanned from your screen" }
+        return text == nil ? "Nothing copied yet" : "Your clipboard, ready to scan"
+    }
+}
+
+/// A running dev server in QR Beam; picking it turns its network URL into the code.
+struct ServerChip: View {
+    let server: DevServer
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: server.onNetwork ? "iphone" : "lock.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text("\(server.shortName) :\(String(server.port))")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .foregroundStyle(selected ? .white : .white.opacity(server.onNetwork ? 0.85 : 0.5))
+            .background(Capsule().fill(selected ? Color.teal.opacity(0.45) : .white.opacity(0.08)))
+            .overlay(Capsule().strokeBorder(selected ? Color.teal : .white.opacity(0.1), lineWidth: 0.8))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -637,18 +706,48 @@ struct QuickActionTile: View {
     let label: String
     let isOn: Bool
     let onTint: Color
+    var status: FeatureStatus = .ready
     let action: () -> Void
     @State private var hovering = false
     @State private var pressed = false
+    @State private var nudge = 0
+
+    private var unsupported: Bool {
+        if case .unsupported = status { return true }
+        return false
+    }
+    private var needsSetup: Bool {
+        if case .needsSetup = status { return true }
+        return false
+    }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            if unsupported { nudge += 1 }  // shake "no"; the footer caption says why
+            action()
+        } label: {
             VStack(spacing: 5) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(isOn ? onTint : .white)
                     .frame(height: 18)
                     .contentTransition(.symbolEffect(.replace))
+                    .overlay(alignment: .topTrailing) {
+                        if unsupported {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 7.5, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .padding(2.5)
+                                .background(Circle().fill(.black.opacity(0.75)))
+                                .offset(x: 8, y: -5)
+                        } else if needsSetup {
+                            Circle()
+                                .fill(.orange)
+                                .frame(width: 7, height: 7)
+                                .overlay(Circle().strokeBorder(.black.opacity(0.6), lineWidth: 1))
+                                .offset(x: 6, y: -3)
+                        }
+                    }
                 Text(label)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(isOn ? 1 : 0.85))
@@ -666,6 +765,18 @@ struct QuickActionTile: View {
                     .strokeBorder(isOn ? onTint.opacity(0.7) : .white.opacity(hovering ? 0.14 : 0.06), lineWidth: 1)
             )
             .shadow(color: isOn ? onTint.opacity(0.45) : .clear, radius: 8)
+            .opacity(unsupported ? 0.45 : 1)
+            .saturation(unsupported ? 0 : 1)
+            .keyframeAnimator(initialValue: 0.0, trigger: nudge) { view, x in
+                view.offset(x: x)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    LinearKeyframe(-5, duration: 0.06)
+                    LinearKeyframe(5, duration: 0.08)
+                    LinearKeyframe(-3, duration: 0.08)
+                    LinearKeyframe(0, duration: 0.08)
+                }
+            }
             .scaleEffect(pressed ? 0.94 : (hovering ? 1.03 : 1))
             .contentShape(Rectangle())
         }
@@ -1232,3 +1343,4 @@ enum Haptics {
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     }
 }
+

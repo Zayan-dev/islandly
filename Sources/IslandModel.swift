@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Island state
 
 enum IslandTab: String, CaseIterable {
-    case home, timer, shelf, clipboard
+    case home, dev, timer, shelf, clipboard
 
     var symbol: String {
         switch self {
@@ -13,6 +13,7 @@ enum IslandTab: String, CaseIterable {
         case .timer: return "timer"
         case .shelf: return "tray.full.fill"
         case .clipboard: return "list.clipboard.fill"
+        case .dev: return "server.rack"
         }
     }
 }
@@ -31,6 +32,8 @@ enum Peek: Equatable {
     case needsScreenAccess
     case callListening(String)
     case build(BuildActivity)
+    case phoneReceived(name: String, isText: Bool)
+    case signature
 }
 
 /// What the footer caption is describing (native tooltips don't show in a non-activating panel).
@@ -54,15 +57,20 @@ final class IslandModel: ObservableObject {
     let prompter = PrompterModel()
     let nameAlert = NameAlertModel()
     let builds = BuildModel()
+    let availability = AvailabilityModel()
+    let devServers = DevServerModel()
+    let receiver = PhoneReceiver()
 
     @Published private(set) var hint: Hint?
     @Published var expanded = false {
         didSet {
             if expanded && !oldValue {
                 actions.refreshState()
+                availability.refresh()
                 Haptics.open()
                 // Something is playing → open straight onto the music card.
-                if media.track?.isPlaying == true {
+                // (Unless the phone is mid-transfer: keep that panel.)
+                if media.track?.isPlaying == true, !receiver.isRunning {
                     tab = .home
                     homePanel = nil
                 }
@@ -73,7 +81,9 @@ final class IslandModel: ObservableObject {
     /// True for a moment when someone says an alert word: the island flashes purple once.
     @Published private(set) var mentionFlash = false
     @Published var tab: IslandTab = .home
-    @Published var homePanel: HomePanel?
+    @Published var homePanel: HomePanel? { didSet { syncPhone() } }
+    /// Send / Receive inside the Phone panel.
+    @Published var phoneMode: PhoneMode = .send { didSet { syncPhone() } }
     /// Horizontal offset of the music card while you two-finger swipe it (next / previous).
     @Published private(set) var mediaSwipe: CGFloat = 0
     /// Mouse is over the music card (swipes only count there, not over the tab chips).
@@ -87,6 +97,8 @@ final class IslandModel: ObservableObject {
     @Published var suppressHover = false
     /// Last QR scanned from the screen (shown in the QR Beam panel instead of the clipboard).
     @Published var qrScanResult: String?
+    /// Dev server picked in QR Beam (its network URL becomes the code).
+    @Published var qrServerID: String?
 
     private var bag: [AnyCancellable] = []
     private var peekToken = 0
@@ -98,7 +110,7 @@ final class IslandModel: ObservableObject {
         let children: [ObservableObjectPublisher] = [
             system.objectWillChange, media.objectWillChange, timer.objectWillChange,
             clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange,
-            stats.objectWillChange, actions.objectWillChange,
+            stats.objectWillChange, actions.objectWillChange, availability.objectWillChange, devServers.objectWillChange, receiver.objectWillChange,
             prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange,
         ]
         for child in children {
@@ -120,7 +132,23 @@ final class IslandModel: ObservableObject {
                 AttentionAlert.shared.start(saying: "Someone said \(mention.keyword)")
             }
         }
-        nameAlert.onCallStarted = { [weak self] app in self?.showPeek(.callListening(app), duration: 3.5) }
+        receiver.onFile = { [weak self] url in
+            self?.shelf.add(url)
+            self?.showPeek(.phoneReceived(name: url.lastPathComponent, isText: false), duration: 4)
+        }
+        receiver.onSignature = { [weak self] url in
+            self?.shelf.add(url)
+            self?.showPeek(.signature, duration: 4)
+        }
+        receiver.onText = { [weak self] text in
+            // Not copied automatically: it waits in Phone ▸ Receive until you choose Copy.
+            self?.showPeek(.phoneReceived(name: text, isText: true), duration: 4)
+        }
+        nameAlert.onCallStarted = { [weak self] app in
+            // Don't claim to be listening on a Mac that can't transcribe.
+            guard let self, self.availability.status(for: .nameAlert) == .ready else { return }
+            self.showPeek(.callListening(app), duration: 3.5)
+        }
         builds.onFinish = { [weak self] activity in
             NSSound(named: activity.succeeded ? "Hero" : "Basso")?.play()
             self?.showPeek(.build(activity), duration: activity.succeeded ? 6 : 12)
@@ -151,11 +179,16 @@ final class IslandModel: ObservableObject {
         case .cpu: return "cpu"
         case .memory: return "memorychip"
         case .action(let action):
+            switch availability.status(for: action) {
+            case .needsSetup: return "exclamationmark.triangle.fill"
+            case .unsupported: return "lock.fill"
+            case .ready: break
+            }
             switch action {
             case .colorPicker: return "eyedropper.halffull"
             case .darkMode: return "circle.lefthalf.filled"
             case .grabText: return "text.viewfinder"
-            case .qrBeam: return "qrcode"
+            case .qrBeam: return "iphone.gen3.radiowaves.left.and.right"
             case .prompter: return "text.aligncenter"
             case .nameAlert: return "person.wave.2.fill"
             }
@@ -170,6 +203,7 @@ final class IslandModel: ObservableObject {
             case .timer: return "Timer: countdowns that stay visible beside the notch."
             case .shelf: return "Shelf: drop files on the notch, drag them out anywhere later."
             case .clipboard: return "Clipboard: your last 25 copied texts, one click to copy again."
+            case .dev: return "Dev: servers running on this Mac. Open one in the browser or on your phone, or stop a stuck one."
             }
         case .keepAwake:
             if system.keepAwake {
@@ -183,11 +217,15 @@ final class IslandModel: ObservableObject {
         case .memory:
             return "Memory: \(formatBytes(stats.memoryUsed, style: .memory)) of \(formatBytes(stats.memoryTotal, style: .memory)) in use (\(Int(stats.memoryFraction * 100))%)"
         case .action(let action):
+            switch availability.status(for: action) {
+            case .needsSetup(let reason, _), .unsupported(let reason): return reason
+            case .ready: break
+            }
             switch action {
             case .colorPicker: return "Click any pixel on screen to copy its hex color."
             case .darkMode: return "Switch macOS between light and dark appearance."
             case .grabText: return "Drag a box over anything on screen to copy its text, or read a QR code."
-            case .qrBeam: return "Turn whatever you copied into a QR code, then scan it with your phone."
+            case .qrBeam: return "Phone: send links and dev servers to it, or receive photos, files and text from it."
             case .prompter: return "Teleprompter: your script scrolls right under the camera, so you keep eye contact."
             case .nameAlert: return "Alerts you when someone on a call or video says your name or a keyword."
             }
@@ -217,38 +255,43 @@ final class IslandModel: ObservableObject {
         case .timer: height = timer.isActive ? 172 : 162
         case .shelf: height = 184
         case .clipboard: height = clipboard.items.isEmpty ? 142 : 290
+        case .dev:
+            if devServers.phone != nil {
+                height = notchSize.height + 8 + 22 + 8 + 122 + 16
+            } else {
+                height = devServers.servers.isEmpty ? 142 : notchSize.height + 8 + 26 + CGFloat(min(devServers.servers.count, 5)) * 48 + 16
+            }
         }
         if hint != nil { height += Self.footerHeight }
         return CGSize(width: Self.expandedWidth, height: min(height, Self.maxExpandedSize.height))
     }
 
-    enum LeftSlot: Equatable { case none, artwork, timerRing, build, listening }
-    enum RightSlot: Equatable { case none, countdown, buildElapsed, waveform }
+    /// What the closed island shows while something is live. It stays exactly the notch; indicators peek out
+    /// just past its edges (the notch itself is the camera cutout, so it can't show anything):
+    /// the song's thumbnail on the left, the green wave (or the phone icon while Receive is open) on the right.
+    enum ClosedIndicator: Equatable { case wave, receiving }
+    static let indicatorPeek: CGFloat = 30
 
-    var leftSlot: LeftSlot {
-        if media.track != nil { return .artwork }
-        if timer.isActive { return .timerRing }
-        if !builds.running.isEmpty { return .build }
-        if nameAlert.isListening { return .listening }
-        return .none
+    var closedIndicator: ClosedIndicator? {
+        if receiver.isRunning { return .receiving }  // an open port should never be invisible
+        if media.track?.isPlaying == true { return .wave }
+        return nil
     }
 
-    var rightSlot: RightSlot {
-        if timer.isActive { return .countdown }
-        if !builds.running.isEmpty { return .buildElapsed }
-        if media.track != nil { return .waveform }
-        return .none
-    }
+    /// Thumbnail tab on the left while something plays.
+    var showsClosedArtwork: Bool { media.track?.isPlaying == true }
 
-    /// Idle: exactly the notch. Grows a little when there is something live to show.
     var collapsedSize: CGSize {
-        let extra: CGFloat
-        switch (leftSlot, rightSlot) {
-        case (.none, .none): extra = 0
-        case (_, .countdown), (_, .buildElapsed): extra = 110
-        default: extra = 80
-        }
-        return CGSize(width: notchSize.width + extra, height: notchSize.height)
+        let tabs = CGFloat((showsClosedArtwork ? 1 : 0) + (closedIndicator != nil ? 1 : 0))
+        return CGSize(width: notchSize.width + tabs * Self.indicatorPeek, height: notchSize.height)
+    }
+
+    /// Keeps the notch-covered part centred on the notch when only one side has a tab.
+    var islandOffsetX: CGFloat {
+        guard !expanded, peek == nil, !prompter.isRunning else { return 0 }
+        let right: CGFloat = closedIndicator != nil ? Self.indicatorPeek : 0
+        let left: CGFloat = showsClosedArtwork ? Self.indicatorPeek : 0
+        return (right - left) / 2
     }
 
     var prompterSize: CGSize {
@@ -279,6 +322,16 @@ final class IslandModel: ObservableObject {
     // MARK: Quick actions
 
     func perform(_ action: QuickAction) {
+        switch availability.status(for: action) {
+        case .unsupported:
+            return  // the footer caption already explains why
+        case .needsSetup(_, let pane) where action != .grabText:
+            // Grab Text still tries: the capture itself is the only reliable permission check.
+            AvailabilityModel.openSettings(pane)
+            return
+        default:
+            break
+        }
         switch action {
         case .colorPicker:
             suppressHover = true
@@ -302,7 +355,7 @@ final class IslandModel: ObservableObject {
     func isOn(_ action: QuickAction) -> Bool {
         switch action {
         case .darkMode: return actions.darkMode
-        case .qrBeam: return homePanel == .qr
+        case .qrBeam: return homePanel == .qr || receiver.isRunning
         case .prompter: return homePanel == .prompter
         case .nameAlert: return homePanel == .nameAlert || nameAlert.isListening
         default: return false
@@ -311,6 +364,16 @@ final class IslandModel: ObservableObject {
 
     func togglePanel(_ panel: HomePanel) {
         homePanel = homePanel == panel ? nil : panel
+    }
+
+    /// The receiver runs only while Receive is showing.
+    private func syncPhone() {
+        if homePanel == .qr && phoneMode != .send {
+            receiver.page = phoneMode == .sign ? .sign : .upload
+            receiver.start()
+        } else if receiver.isRunning {
+            receiver.stop()
+        }
     }
 
     /// Only called after a capture actually fails. (CGPreflightScreenCaptureAccess can report false
@@ -327,9 +390,13 @@ final class IslandModel: ObservableObject {
             guard let self else { return }
             self.suppressHover = false
             guard let image else {
-                if ScreenTools.lastCaptureFailed { self.requestScreenAccess() }
+                if ScreenTools.lastCaptureFailed {
+                    self.availability.screenCaptureBlocked = true
+                    self.requestScreenAccess()
+                }
                 return
             }
+            self.availability.screenCaptureBlocked = false
             DispatchQueue.global(qos: .userInitiated).async {
                 let text = ScreenTools.recognizeText(in: image)
                 let qr = text.isEmpty ? ScreenTools.detectQR(in: image) : nil
@@ -351,6 +418,7 @@ final class IslandModel: ObservableObject {
     private func receiveScannedQR(_ payload: String) {
         clipboard.copy(payload)
         qrScanResult = payload
+        qrServerID = nil
         homePanel = .qr
         tab = .home
         showPeek(.qrScanned(payload), duration: 4)
@@ -418,6 +486,10 @@ final class IslandModel: ObservableObject {
         }
         timer.check(now)
         builds.pruneDead()
+        // Dev servers are only scanned while that tab is on screen.
+        if expanded && (tab == .dev || (tab == .home && homePanel == .qr && phoneMode == .send)) && Int(now.timeIntervalSince1970) % 3 == 0 {
+            devServers.refresh()
+        }
         nameAlert.tick()
         if system.keepAwake, let until = system.keepAwakeUntil, now >= until {
             system.checkKeepAwakeExpiry(now)

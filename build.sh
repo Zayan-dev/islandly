@@ -25,6 +25,8 @@ for arch in $ARCHS; do
 done
 lipo -create "${slices[@]}" -output "$APP/Contents/MacOS/Islandly"
 cp Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # A stable signing identity lets macOS remember granted permissions (Screen Recording, Automation…)
 # across rebuilds. Ad-hoc signatures change every build, so permissions would reset each time.
