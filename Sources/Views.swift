@@ -19,13 +19,15 @@ struct IslandView: View {
             ZStack(alignment: .top) {
                 // Liquid Glass when open; solid black otherwise so it melts into the notch.
                 // Deep black under the glass: keeps the Liquid Glass edge but reads as rich black.
-                shape.fill(.black.opacity(0.6))
-                    .opacity(glass ? 1 : 0)
-                Color.clear
-                    .glassEffect(.regular.tint(.black.opacity(0.5)), in: shape)
-                    .opacity(glass ? 1 : 0)
-                shape.fill(.black)
-                    .opacity(glass ? 0 : 1)
+                // The glass only exists while open: even at zero opacity a live glass effect keeps
+                // sampling what's behind it and costs battery all day.
+                if glass {
+                    shape.fill(.black.opacity(0.6))
+                    Color.clear
+                        .glassEffect(.regular.tint(.black.opacity(0.5)), in: shape)
+                } else {
+                    shape.fill(.black)
+                }
 
                 if prompting {
                     PrompterView(model: model)
@@ -49,9 +51,7 @@ struct IslandView: View {
                         Group {
                             switch indicator {
                             case .wave:
-                                Image(systemName: "waveform")
-                                    .foregroundStyle(.green)
-                                    .symbolEffect(.variableColor.iterative, isActive: true)
+                                ClosedWave()
                             case .receiving:
                                 Image(systemName: "iphone.and.arrow.forward")
                                     .foregroundStyle(.teal)
@@ -1344,3 +1344,12 @@ enum Haptics {
     }
 }
 
+
+/// The green wave beside the closed notch. Deliberately still: any animation here runs for as long as music
+/// plays (hours a day), and even a 2-per-second timer tripled Islandly's CPU use (1% → 3%).
+struct ClosedWave: View {
+    var body: some View {
+        Image(systemName: "waveform")
+            .foregroundStyle(.green)
+    }
+}
