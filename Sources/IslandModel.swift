@@ -34,6 +34,7 @@ enum Peek: Equatable {
     case build(BuildActivity)
     case phoneReceived(name: String, isText: Bool)
     case signature
+    case update(count: Int)
 }
 
 /// What the footer caption is describing (native tooltips don't show in a non-activating panel).
@@ -43,6 +44,7 @@ enum Hint: Equatable {
     case cpu
     case memory
     case action(QuickAction)
+    case update
 }
 
 final class IslandModel: ObservableObject {
@@ -60,6 +62,7 @@ final class IslandModel: ObservableObject {
     let availability = AvailabilityModel()
     let devServers = DevServerModel()
     let receiver = PhoneReceiver()
+    let updates = UpdateModel()
 
     @Published private(set) var hint: Hint?
     @Published var expanded = false {
@@ -111,7 +114,7 @@ final class IslandModel: ObservableObject {
             system.objectWillChange, media.objectWillChange, timer.objectWillChange,
             clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange,
             stats.objectWillChange, actions.objectWillChange, availability.objectWillChange, devServers.objectWillChange, receiver.objectWillChange,
-            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange,
+            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange,
         ]
         for child in children {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -154,6 +157,7 @@ final class IslandModel: ObservableObject {
             self?.showPeek(.build(activity), duration: activity.succeeded ? 6 : 12)
         }
         builds.listen()
+        updates.onResult = { [weak self] count in self?.showPeek(.update(count: count), duration: count > 0 ? 6 : 3) }
     }
 
     // MARK: Hints (footer caption)
@@ -178,6 +182,7 @@ final class IslandModel: ObservableObject {
         case .keepAwake: return "cup.and.saucer.fill"
         case .cpu: return "cpu"
         case .memory: return "memorychip"
+        case .update: return "arrow.down.circle.fill"
         case .action(let action):
             switch availability.status(for: action) {
             case .needsSetup: return "exclamationmark.triangle.fill"
@@ -216,6 +221,17 @@ final class IslandModel: ObservableObject {
             return "CPU \(Int(stats.cpu * 100))% busy  ·  ↓ \(formatBytes(stats.downRate))/s  ↑ \(formatBytes(stats.upRate))/s"
         case .memory:
             return "Memory: \(formatBytes(stats.memoryUsed, style: .memory)) of \(formatBytes(stats.memoryTotal, style: .memory)) in use (\(Int(stats.memoryFraction * 100))%)"
+        case .update:
+            switch updates.state {
+            case .available(let count, let changes):
+                let what = changes.first.map { ": \($0)\(count > 1 ? " and more" : "")" } ?? ""
+                return "Update available (\(count) change\(count == 1 ? "" : "s")\(what)). Click to update; Islandly restarts by itself."
+            case .updating(let step): return step
+            case .failed(let message): return "Update failed: \(message) Click to try again."
+            case .upToDate: return "Islandly is up to date."
+            case .checking: return "Checking for updates…"
+            case .idle: return updates.versionLabel
+            }
         case .action(let action):
             switch availability.status(for: action) {
             case .needsSetup(let reason, _), .unsupported(let reason): return reason
@@ -491,6 +507,7 @@ final class IslandModel: ObservableObject {
             devServers.refresh()
         }
         nameAlert.tick()
+        updates.tick(now)
         if system.keepAwake, let until = system.keepAwakeUntil, now >= until {
             system.checkKeepAwakeExpiry(now)
             showPeek(.keepAwakeEnded)

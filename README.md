@@ -100,10 +100,18 @@ and launches Islandly. It takes about a minute. If it prints a line to add to `~
   2. Name **`Islandly Dev`** · Identity Type **Self-Signed Root** · Certificate Type **Code Signing** → **Create**.
   3. Run `./scripts/install.sh` again. From now on builds are signed with it automatically.
 
+### Update
+
+Islandly checks for new versions a few times a day. When there is one, a green **↓** appears beside the CPU and memory
+gauges (and the notch tells you once). Click it: Islandly pulls the latest code, rebuilds it on your Mac (about a minute)
+and restarts itself. You can also right-click the notch → **Check for Updates**, or turn automatic checks off there.
+
+> Installed before the update button existed? Update once by hand with the command below; from then on it's one click.
+
 ### Update, uninstall, build only
 
 ```bash
-git pull && ./scripts/install.sh       # update to the latest version
+git pull && ./scripts/install.sh       # update to the latest version (by hand)
 ./scripts/uninstall.sh                 # remove the app and the notch command
 ./scripts/uninstall.sh --all           # …and also reset its settings and permissions
 ./build.sh && open build/Islandly.app  # build and run without installing (universal: Apple Silicon + Intel)
@@ -136,9 +144,11 @@ Output, colors and exit codes pass through unchanged — you get a ✅ or ❌ wi
 
 ## Privacy & performance
 
-- **Everything runs on your Mac.** Speech is transcribed with Apple's on-device recognizer; text and QR codes are read
+- **Everything runs on your Mac.** Speech is transcribed on-device with Apple's SpeechTranscriber (the first time,
+  macOS downloads its English speech model once); text and QR codes are read
   with Apple's Vision framework. Nothing is recorded, stored or sent anywhere.
-- The only network requests are album/video artwork from the services you're already playing.
+- The only network requests are album/video artwork from the services you're already playing, and the update check:
+  a `git fetch` from GitHub a few times a day, which sends nothing about you (right-click the notch to turn it off).
 - Islandly opens **no network ports** except while **Phone ▸ Receive** is showing: then a small upload page is served on your
   Wi-Fi at a random one-time link (every other path returns 404; files up to 2 GB; stops after 10 idle minutes).
 - Clipboard history lives in memory only and skips password-manager items.
@@ -154,7 +164,7 @@ Output, colors and exit codes pass through unchanged — you get a ✅ or ❌ wi
 | YouTube shows an orange "Enable Chrome…" note | Chrome → **View → Developer → Allow JavaScript from Apple Events** |
 | Grab Text says "Nothing readable found" | Grant **Screen & System Audio Recording**, then **Restart Islandly** |
 | Permissions keep resetting after each build | Create the `Islandly Dev` certificate (see above) |
-| Name Alert misses your name | Names at the very start of a sentence are sometimes dropped by the recognizer; add nicknames as keywords |
+| Name Alert misses your name | Add the spellings it hears as keywords too (the panel shows "Hearing: …" live), plus nicknames. Similar-sounding capitalized words ("Zain" for "Zayan") already count |
 | Island stuck or misbehaving | Right-click the notch → **Restart Islandly**, or `pkill -x Islandly; open -a Islandly` |
 | `notch: command not found` | Run the PATH line printed at the end of `install.sh`, or open a new terminal |
 

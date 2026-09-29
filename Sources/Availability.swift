@@ -36,8 +36,8 @@ final class AvailabilityModel: ObservableObject {
         lastRefresh = Date()
 
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        speechLocaleSupported = recognizer != nil
-        speechOnDevice = recognizer?.supportsOnDeviceRecognition ?? false
+        speechLocaleSupported = recognizer != nil || SpeechTranscriber.isAvailable
+        speechOnDevice = CallTranscriber.isAvailable
         speechAuth = SFSpeechRecognizer.authorizationStatus()
         if screenCaptureBlocked && CGPreflightScreenCaptureAccess() { screenCaptureBlocked = false }
 

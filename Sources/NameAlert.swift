@@ -60,11 +60,14 @@ final class NameAlertModel: NSObject, ObservableObject {
     private var generation = 0
     private var pollCount = 0
 
-    private let transcriber = LiveTranscriber()
-    /// Highest occurrence count already alerted, per keyword, for the current transcript segment.
-    private var alerted: [String: Int] = [:]
-    private var alertedSegment = 0
+    private let transcriber = CallTranscriber()
+    /// Finished words, newest last: the live snippet and the context shown with a mention.
+    private var recentWords: [String] = []
+    /// Audio times (s) already alerted, per keyword: a mention is revised several times while it's spoken.
+    private var alertedTimes: [String: [Double]] = [:]
     private var lastAlert: [String: Date] = [:]
+    /// One-time setup in progress (the speech model downloading), shown in the panel.
+    @Published private(set) var setupNote: String?
 
     override init() {
         if let saved = UserDefaults.standard.stringArray(forKey: "nameAlertKeywords"), !saved.isEmpty {
@@ -80,7 +83,12 @@ final class NameAlertModel: NSObject, ObservableObject {
         detectBrowserCalls = UserDefaults.standard.bool(forKey: "nameAlertBrowserCalls")
         super.init()
         calls.checkBrowsers = detectBrowserCalls
-        transcriber.onText = { [weak self] text, segment in self?.scan(text, segment: segment) }
+        transcriber.onHeard = { [weak self] heard in self?.match(heard) }
+        transcriber.onStatus = { [weak self] note in self?.setupNote = note }
+        transcriber.onError = { [weak self] error in
+            self?.stop()
+            self?.problem = "Listening stopped: \(error.localizedDescription)"
+        }
         calls.onChange = { [weak self] inCall, app in
             guard let self else { return }
             self.callApp = app
@@ -126,7 +134,7 @@ final class NameAlertModel: NSObject, ObservableObject {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         UserDefaults.standard.set(keywords, forKey: "nameAlertKeywords")
-        transcriber.contextualStrings = keywords
+        transcriber.keywords = keywords
     }
 
 
@@ -138,7 +146,7 @@ final class NameAlertModel: NSObject, ObservableObject {
         let run = generation
         LiveTranscriber.requestAuthorization { ok in
             guard run == self.generation else { return }  // stopped while asking
-            guard ok, LiveTranscriber.isAvailableOnDevice else {
+            guard ok, CallTranscriber.isAvailable else {
                 self.starting = false
                 if ok {
                     self.problem = "On-device speech recognition isn't available on this Mac, so Name Alert stays off (audio never leaves your Mac)."
@@ -158,10 +166,12 @@ final class NameAlertModel: NSObject, ObservableObject {
         isListening = false
         starting = false
         liveSnippet = ""
+        setupNote = nil
+        recentWords = []
     }
 
     private func startStream(_ run: Int) {
-        transcriber.contextualStrings = keywords
+        transcriber.keywords = keywords
         transcriber.start()
         let transcriber = self.transcriber
         SystemAudioTap.shared.subscribe("nameAlert", handler: { transcriber.append($0) }, onError: { [weak self] error in
@@ -188,23 +198,57 @@ final class NameAlertModel: NSObject, ObservableObject {
 
     // MARK: Matching
 
-    /// Capitalized words that *sound* like the keyword (names often come out as "Zane" for "Zayan").
-    /// Lower-case words are skipped so everyday words ("zone") don't trigger alerts.
-    private func soundAlikeMatches(of keyword: String, in text: String) -> [NSTextCheckingResult] {
-        let target = soundex(keyword)
-        guard target.count == 4, keyword.count >= 3,
-              let regex = try? NSRegularExpression(pattern: "\\b[A-Z][a-zA-Z']+\\b") else { return [] }
-        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).filter { match in
-            guard let range = Range(match.range, in: text) else { return false }
-            let word = String(text[range])
-            return word.caseInsensitiveCompare(keyword) != .orderedSame
-                && abs(word.count - keyword.count) <= 2
-                && soundex(word) == target
+    /// Checks everything the recognizer heard (its best guess and its alternatives) for each keyword.
+    /// A mention is alerted once: later revisions of the same words carry the same audio time.
+    private func match(_ heard: Heard) {
+        guard let best = heard.candidates.first else { return }
+        let earlier = recentWords
+        if heard.isFinal { recentWords = Array((recentWords + best.map(\.text)).suffix(40)) }
+        liveSnippet = (earlier + best.map(\.text)).suffix(8).joined(separator: " ")
+
+        for keyword in keywords {
+            let key = keyword.lowercased()
+            let parts = normalizedWords(keyword)
+            guard !parts.isEmpty else { continue }
+            for words in heard.candidates {
+                let spoken = words.map { normalizedWords($0.text).joined() }
+                for i in spoken.indices where Self.matches(spoken, at: i, parts: parts, original: words[i].text) {
+                    let time = words[i].time
+                    if alertedTimes[key, default: []].contains(where: { abs($0 - time) < 4 }) { continue }
+                    alertedTimes[key, default: []].append(time)
+                    alertedTimes[key] = Array(alertedTimes[key, default: []].suffix(20))
+                    // Two alerts for one keyword within 3 s would be the same moment heard twice.
+                    if let last = lastAlert[key], Date().timeIntervalSince(last) < 3 { continue }
+                    lastAlert[key] = Date()
+
+                    let end = min(words.count, i + parts.count)
+                    let before = (earlier + words[..<i].map(\.text)).suffix(9).joined(separator: " ")
+                    let said = words[i..<end].map(\.text).joined(separator: " ")
+                    let after = words[end...].prefix(4).map(\.text).joined(separator: " ")
+                    let context = "…\(before) \(said) \(after)".trimmingCharacters(in: .whitespaces)
+                    let mention = Mention(keyword: keyword, context: context, date: Date())
+                    mentions.insert(mention, at: 0)
+                    if mentions.count > 10 { mentions.removeLast() }
+                    onMention?(mention)
+                }
+            }
         }
     }
 
+    /// Exact (case- and punctuation-insensitive, "Zayan's" counts) or, for single-word keywords, a capitalized
+    /// word that sounds alike: speech models often write an unfamiliar name as "Zan", "Zain" or "Zion".
+    /// Lower-case words are skipped so everyday words ("zone") don't trigger alerts.
+    private static func matches(_ spoken: [String], at i: Int, parts: [String], original: String) -> Bool {
+        if i + parts.count <= spoken.count, Array(spoken[i..<i + parts.count]) == parts { return true }
+        if spoken[i].hasSuffix("s"), parts.count == 1, spoken[i].dropLast() == parts[0] { return true }
+        guard parts.count == 1, let keyword = parts.first, keyword.count >= 3,
+              original.first?.isUppercase == true else { return false }
+        let word = spoken[i]
+        return word != keyword && abs(word.count - keyword.count) <= 2 && soundex(word) == soundex(keyword)
+    }
+
     /// Classic Soundex code (e.g. Zayan, Zane, Zayn → Z500).
-    private func soundex(_ word: String) -> String {
+    private static func soundex(_ word: String) -> String {
         let codes: [Character: Character] = [
             "b": "1", "f": "1", "p": "1", "v": "1",
             "c": "2", "g": "2", "j": "2", "k": "2", "q": "2", "s": "2", "x": "2", "z": "2",
@@ -221,38 +265,6 @@ final class NameAlertModel: NSObject, ObservableObject {
             if result.count == 4 { break }
         }
         return result.padding(toLength: 4, withPad: "0", startingAt: 0)
-    }
-
-    private func scan(_ text: String, segment: Int) {
-        if segment != alertedSegment {
-            alertedSegment = segment
-            alerted = [:]
-        }
-        let words = text.split(separator: " ").map(String.init)
-        liveSnippet = words.suffix(8).joined(separator: " ")
-
-        for keyword in keywords {
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: keyword) + "\\b"
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { continue }
-            var matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            matches += soundAlikeMatches(of: keyword, in: text)
-            matches.sort { $0.range.location < $1.range.location }
-            let seen = alerted[keyword.lowercased()] ?? 0
-            guard matches.count > seen, let match = matches.last, let range = Range(match.range, in: text) else { continue }
-            alerted[keyword.lowercased()] = matches.count
-
-            // Same keyword at most once every 15 s (transcripts get revised while you speak).
-            if let last = lastAlert[keyword.lowercased()], Date().timeIntervalSince(last) < 15 { continue }
-            lastAlert[keyword.lowercased()] = Date()
-
-            let before = text[..<range.lowerBound].split(separator: " ").suffix(9).joined(separator: " ")
-            let after = text[range.upperBound...].split(separator: " ").prefix(4).joined(separator: " ")
-            let context = "…\(before) \(text[range]) \(after)".trimmingCharacters(in: .whitespaces)
-            let mention = Mention(keyword: keyword, context: context, date: Date())
-            mentions.insert(mention, at: 0)
-            if mentions.count > 10 { mentions.removeLast() }
-            onMention?(mention)
-        }
     }
 }
 
@@ -383,6 +395,9 @@ struct NameAlertPanel: View {
                 if let problem = alert.problem {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                } else if let note = alert.setupNote {
+                    Label(note, systemImage: "arrow.down.circle")
+                        .foregroundStyle(.secondary)
                 } else if let mention = alert.mentions.first {
                     let head = Text("\u{201C}\(mention.keyword)\u{201D} · \(ago(mention.date))  ").fontWeight(.semibold)
                     let body = Text(mention.context).foregroundColor(.secondary)
@@ -464,3 +479,4 @@ struct MiniSwitch: View {
         .buttonStyle(.plain)
     }
 }
+

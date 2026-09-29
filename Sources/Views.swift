@@ -90,6 +90,19 @@ struct IslandView: View {
                 return true
             }
             .contextMenu {
+                let updates = model.updates
+                if updates.canUpdate {
+                    if updates.isAvailable {
+                        Button("Update Islandly") { updates.update() }
+                    } else {
+                        Button("Check for Updates") { updates.check(userInitiated: true) }
+                            .disabled(updates.isUpdating)
+                    }
+                    Toggle("Check for Updates Automatically", isOn: Binding(get: { updates.autoCheck },
+                                                                         set: { updates.autoCheck = $0 }))
+                    Text(updates.versionLabel)
+                    Divider()
+                }
                 Button("Restart Islandly") { relaunchApp() }
                 Button("Quit Islandly") { NSApp.terminate(nil) }
             }
@@ -277,6 +290,19 @@ struct PeekView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
+            case .update(let count):
+                Image(systemName: count > 0 ? "arrow.down.circle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(count > 0 ? "Islandly update available" : "Islandly is up to date")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(count > 0 ? "\(count) new change\(count == 1 ? "" : "s") · open the island and click the green arrow"
+                                   : model.updates.versionLabel)
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+
             case .qrScanned(let payload):
                 Image(systemName: "qrcode.viewfinder")
                     .font(.system(size: 20))
@@ -307,6 +333,9 @@ struct ExpandedView: View {
                 TabBar(model: model)
                 Spacer()
                 HStack(spacing: 10) {
+                    if model.updates.showsButton {
+                        UpdateButton(model: model)
+                    }
                     StatGauge(model: model, value: model.stats.cpu, symbol: "cpu", hint: .cpu)
                     StatGauge(model: model, value: model.stats.memoryFraction, symbol: "memorychip", hint: .memory)
                     KeepAwakeButton(model: model)
@@ -453,6 +482,34 @@ struct TabBar: View {
         case .shelf: return !model.shelf.files.isEmpty && model.tab != .shelf
         default: return false
         }
+    }
+}
+
+/// Beside the gauges, only while there's an update to install, one installing, or one that failed.
+struct UpdateButton: View {
+    @ObservedObject var model: IslandModel
+
+    var body: some View {
+        let updates = model.updates
+        Button {
+            guard !updates.isUpdating else { return }
+            Haptics.tap()
+            updates.update()
+        } label: {
+            Group {
+                if updates.isUpdating {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: updates.isAvailable ? "arrow.down.circle.fill" : "exclamationmark.arrow.circlepath")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(updates.isAvailable ? Color.green : .orange)
+                }
+            }
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hint(.update, model)
     }
 }
 

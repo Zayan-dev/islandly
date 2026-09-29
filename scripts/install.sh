@@ -2,13 +2,18 @@
 # One-step install for developers: build → Applications → `notch` command → launch.
 #   ./scripts/install.sh
 # Overrides: ISLANDLY_APP_DIR (default /Applications, or ~/Applications if not writable),
-#            ISLANDLY_BIN_DIR (where the `notch` symlink goes), NO_OPEN=1 (don't launch).
+#            ISLANDLY_BIN_DIR (where the `notch` symlink goes), NO_OPEN=1 (don't launch),
+#            SKIP_BUILD=1 (install the existing build/Islandly.app; the in-app updater builds first).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="$PWD"
 
-echo "▸ Building Islandly for this Mac…"
-ARCHS="${ARCHS:-$(uname -m)}" ./build.sh | tail -2
+if [ "${SKIP_BUILD:-0}" = "1" ] && [ -d build/Islandly.app ]; then
+    echo "▸ Using the build that's already there"
+else
+    echo "▸ Building Islandly for this Mac…"
+    ARCHS="${ARCHS:-$(uname -m)}" ./build.sh | tail -2
+fi
 
 APP_DIR="${ISLANDLY_APP_DIR:-/Applications}"
 [ -w "$APP_DIR" ] || APP_DIR="$HOME/Applications"
@@ -17,6 +22,8 @@ echo "▸ Installing to $APP_DIR/Islandly.app"
 pkill -x Islandly 2>/dev/null || true
 rm -rf "$APP_DIR/Islandly.app"
 cp -R build/Islandly.app "$APP_DIR/"
+# Lets Islandly ▸ Update find this checkout.
+defaults write app.islandly sourcePath "$REPO"
 
 # `notch` command: symlink into the first writable bin dir on PATH (Homebrew's usually is).
 BIN_DIR="${ISLANDLY_BIN_DIR:-}"

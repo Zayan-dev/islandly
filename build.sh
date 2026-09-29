@@ -25,6 +25,10 @@ for arch in $ARCHS; do
 done
 lipo -create "${slices[@]}" -output "$APP/Contents/MacOS/Islandly"
 cp Info.plist "$APP/Contents/Info.plist"
+# Stamp the commit this build comes from, so the in-app updater knows what's installed.
+if COMMIT=$(git rev-parse HEAD 2>/dev/null); then
+    /usr/libexec/PlistBuddy -c "Add :IslandlyCommit string $COMMIT" "$APP/Contents/Info.plist"
+fi
 mkdir -p "$APP/Contents/Resources"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
