@@ -51,7 +51,7 @@ final class WhatsNewModel: ObservableObject {
                      footnote: "Adds a hook to Claude's settings · undo any time", button: "Turn on"),
         FeatureOffer(id: "codex-agent", symbol: "chevron.left.forwardslash.chevron.right", tint: Color(white: 0.45),
                      title: "Show Codex here?", subtitle: "Answer its approval requests from the notch.",
-                     footnote: "Adds a hook to Codex's settings · undo any time", button: "Turn on"),
+                     footnote: "Codex then asks you to approve it once", button: "Turn on"),
     ]
 
     @Published private(set) var seen: Set<String>
@@ -122,13 +122,19 @@ struct NotchCardLayout<Accessory: View, Buttons: View>: View {
     let tint: Color
     let title: String
     let subtitle: String
+    /// Shows this app icon instead of the symbol tile (e.g. "codex" / "claude").
+    var agentIcon: String? = nil
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let buttons: () -> Buttons
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                IconTile(symbol: symbol, tint: tint)
+                if let agentIcon, AgentIcons.icon(for: agentIcon) != nil {
+                    AgentBadge(source: agentIcon, size: 40)
+                } else {
+                    IconTile(symbol: symbol, tint: tint)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 14, weight: .semibold))
@@ -275,7 +281,8 @@ struct FeatureOfferCard: View {
     let offer: FeatureOffer
 
     var body: some View {
-        NotchCardLayout(model: model, symbol: offer.symbol, tint: offer.tint, title: offer.title, subtitle: offer.subtitle) {
+        NotchCardLayout(model: model, symbol: offer.symbol, tint: offer.tint, title: offer.title, subtitle: offer.subtitle,
+                        agentIcon: offer.id == "codex-agent" ? "codex" : (offer.id == "claude-agent" ? "claude" : nil)) {
             Footnote(text: offer.footnote)
         } buttons: {
             CardButton(title: "Not now") { model.whatsNew.markSeen([offer.id]) }

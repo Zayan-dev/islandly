@@ -165,8 +165,11 @@ struct ClosedTabs: View {
                     Image(systemName: "iphone.and.arrow.forward")
                         .foregroundStyle(.teal)
                 case .agent(let waiting):
-                    Image(systemName: waiting ? "hand.raised.fill" : "sparkle")
-                        .foregroundStyle(waiting ? Color.orange : Color(red: 0.85, green: 0.47, blue: 0.34))
+                    if waiting {
+                        Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+                    } else {
+                        AgentBadge(source: model.agents.working.first?.source ?? "claude", size: 16)
+                    }
                 }
             }
             .font(.system(size: 12, weight: .semibold))

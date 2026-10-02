@@ -289,7 +289,12 @@ final class AgentHub: ObservableObject {
 
     func setCodex(_ on: Bool) {
         do {
-            if on { try AgentHooks.installCodex() } else { try AgentHooks.uninstallCodex() }
+            if on {
+                try AgentHooks.installCodex()
+                AgentHooks.offerCodexReview()
+            } else {
+                try AgentHooks.uninstallCodex()
+            }
         } catch {
             AgentHooks.alert("Couldn't update Codex's settings", error.localizedDescription)
         }
@@ -596,6 +601,36 @@ enum AgentHooks {
         try kept.joined(separator: "\n").write(to: codexConfig, atomically: true, encoding: .utf8)
     }
 
+    /// Codex runs new hooks only after you trust them: a Codex safety check Islandly doesn't bypass. The dependable
+    /// place to approve is Codex's own review screen, shown when Codex starts in a terminal; this opens it for you.
+    static func offerCodexReview() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex", "\(home)/.local/bin/codex",
+                          "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+                          "/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex"]
+        let codex = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        let steps = "Codex runs new hooks only after you approve them once (its own safety check).\n\n"
+            + (codex != nil
+               ? "Click Open Review: Terminal opens Codex, which lists Islandly's hooks. Approve them, then quit Codex (Ctrl+C twice). Finally restart your Codex app or reload your IDE window (Codex only reads approvals when it starts) and start a new chat."
+               : "Run codex in a terminal: it lists Islandly's hooks when it starts. Approve them, then restart your Codex app or reload your IDE window and start a new chat.")
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "One more step: approve Islandly in Codex"
+        alert.informativeText = steps
+        if codex != nil { alert.addButton(withTitle: "Open Review") }
+        alert.addButton(withTitle: codex != nil ? "Later" : "OK")
+        guard let codex, alert.runModal() == .alertFirstButtonReturn else { return }
+        // A .command file opens in Terminal without asking for Automation access.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("islandly", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let script = dir.appendingPathComponent("Approve Islandly in Codex.command")
+        let quoted = "'" + codex.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let body = "#!/bin/sh\ncd \"$HOME\"\necho 'Approve the Islandly hooks below, then press Ctrl+C twice to quit.'\nexec \(quoted)\n"
+        guard (try? body.write(to: script, atomically: true, encoding: .utf8)) != nil else { return }
+        chmod(script.path, 0o755)
+        NSWorkspace.shared.open(script)
+    }
+
     static func confirm(_ title: String, _ message: String, button: String) -> Bool {
         NSApp.activate()
         let alert = NSAlert()
@@ -689,16 +724,40 @@ struct AgentRequestView: View {
     }
 }
 
+/// The agent's own app icon (ChatGPT for Codex, Claude for Claude Code), taken from the app installed on this Mac,
+/// the way Finder shows it; a plain symbol when that app isn't installed.
+enum AgentIcons {
+    private static var cache: [String: NSImage?] = [:]
+
+    static func icon(for source: String) -> NSImage? {
+        if let cached = cache[source] { return cached }
+        let ids = source == "codex" ? ["com.openai.codex", "com.openai.chat"] : ["com.anthropic.claudefordesktop"]
+        let image = ids.lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
+            .map { NSWorkspace.shared.icon(forFile: $0.path) }
+        cache[source] = image
+        return image
+    }
+}
+
 struct AgentBadge: View {
     let source: String
     var size: CGFloat = 20
 
     var body: some View {
-        Image(systemName: source == "codex" ? "chevron.left.forwardslash.chevron.right" : "sparkle")
-            .font(.system(size: size * 0.55, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Circle().fill(source == "codex" ? Color(white: 0.3) : Color(red: 0.85, green: 0.47, blue: 0.34)))
+        if let icon = AgentIcons.icon(for: source) {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size * 1.18, height: size * 1.18)   // app icons have a transparent margin
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: source == "codex" ? "chevron.left.forwardslash.chevron.right" : "sparkle")
+                .font(.system(size: size * 0.55, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Circle().fill(source == "codex" ? Color(white: 0.3) : Color(red: 0.85, green: 0.47, blue: 0.34)))
+        }
     }
 }
 
