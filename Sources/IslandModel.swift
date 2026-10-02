@@ -35,6 +35,8 @@ enum Peek: Equatable {
     case phoneReceived(name: String, isText: Bool)
     case signature
     case update(count: Int)
+    case agentDone(agent: String, source: String, project: String, detail: String)
+    case agentWaiting(agent: String, source: String, project: String, message: String)
 }
 
 /// What the footer caption is describing (native tooltips don't show in a non-activating panel).
@@ -48,6 +50,8 @@ enum Hint: Equatable {
 }
 
 final class IslandModel: ObservableObject {
+    // First: it checks whether this is a fresh install before anything else saves a setting.
+    let whatsNew = WhatsNewModel()
     let system = SystemModel()
     let media = MediaModel()
     let timer = TimerModel()
@@ -63,6 +67,7 @@ final class IslandModel: ObservableObject {
     let devServers = DevServerModel()
     let receiver = PhoneReceiver()
     let updates = UpdateModel()
+    let agents = AgentHub()
 
     @Published private(set) var hint: Hint?
     @Published var expanded = false {
@@ -114,7 +119,7 @@ final class IslandModel: ObservableObject {
             system.objectWillChange, media.objectWillChange, timer.objectWillChange,
             clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange,
             stats.objectWillChange, actions.objectWillChange, availability.objectWillChange, devServers.objectWillChange, receiver.objectWillChange,
-            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange,
+            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange,
         ]
         for child in children {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -157,7 +162,18 @@ final class IslandModel: ObservableObject {
             self?.showPeek(.build(activity), duration: activity.succeeded ? 6 : 12)
         }
         builds.listen()
-        updates.onResult = { [weak self] count in self?.showPeek(.update(count: count), duration: count > 0 ? 6 : 3) }
+        agents.onRequest = { NSSound(named: "Submarine")?.play() }
+        agents.onFinished = { [weak self] session, summary in
+            NSSound(named: "Pop")?.play()
+            let took = formatDuration(max(0, Date().timeIntervalSince(session.startedAt)))
+            self?.showPeek(.agentDone(agent: session.agentName, source: session.source, project: session.project,
+                                      detail: summary ?? "Done in \(took)"), duration: 6)
+        }
+        agents.onWaiting = { [weak self] session, message in
+            self?.showPeek(.agentWaiting(agent: session.agentName, source: session.source, project: session.project,
+                                         message: message), duration: 8)
+        }
+        updates.onResult = { [weak self] count in self?.showPeek(.update(count: count), duration: 3) }
     }
 
     // MARK: Hints (footer caption)
@@ -267,6 +283,7 @@ final class IslandModel: ObservableObject {
                 if calendar.next != nil { height += 12 + 46 }
                 if media.sources.count > 1 { height += 12 + 38 }
                 height += CGFloat(min(builds.running.count, 2)) * (12 + 46)
+                height += CGFloat(min(agents.working.count, 2)) * (12 + 46)
             }
         case .timer: height = timer.isActive ? 172 : 162
         case .shelf: height = 184
@@ -285,12 +302,14 @@ final class IslandModel: ObservableObject {
     /// What the closed island shows while something is live. It stays exactly the notch; indicators peek out
     /// just past its edges (the notch itself is the camera cutout, so it can't show anything):
     /// the song's thumbnail on the left, the green wave (or the phone icon while Receive is open) on the right.
-    enum ClosedIndicator: Equatable { case wave, receiving }
+    enum ClosedIndicator: Equatable { case wave, receiving, agent(waiting: Bool) }
     static let indicatorPeek: CGFloat = 30
 
     var closedIndicator: ClosedIndicator? {
         if receiver.isRunning { return .receiving }  // an open port should never be invisible
+        if agents.working.contains(where: { $0.state == .waiting }) { return .agent(waiting: true) }
         if media.track?.isPlaying == true { return .wave }
+        if !agents.working.isEmpty { return .agent(waiting: false) }
         return nil
     }
 
@@ -304,7 +323,7 @@ final class IslandModel: ObservableObject {
 
     /// Keeps the notch-covered part centred on the notch when only one side has a tab.
     var islandOffsetX: CGFloat {
-        guard !expanded, peek == nil, !prompter.isRunning else { return 0 }
+        guard !expanded, peek == nil, !prompter.isRunning, card == nil else { return 0 }
         let right: CGFloat = closedIndicator != nil ? Self.indicatorPeek : 0
         let left: CGFloat = showsClosedArtwork ? Self.indicatorPeek : 0
         return (right - left) / 2
@@ -319,8 +338,40 @@ final class IslandModel: ObservableObject {
         CGSize(width: max(notchSize.width + 200, 380), height: notchSize.height + 52)
     }
 
+    /// A card the island shows by itself until it's answered: an agent's permission request first, then an
+    /// update that's ready, then (once) what's new and new features to switch on.
+    var card: NotchCard? {
+        if let request = agents.pending { return .agent(request.id) }
+        if updates.offer { return .update }
+        if !whatsNew.unseenNotes.isEmpty { return .whatsNew }
+        if let offer = whatsNew.nextFeature(applies: featureApplies) { return .feature(offer.id) }
+        return nil
+    }
+
+    var cardSize: CGSize {
+        switch card {
+        case .agent: return CGSize(width: 440, height: notchSize.height + 160)
+        default: return CGSize(width: 400, height: notchSize.height + 106)   // icon row + footer row
+        }
+    }
+
+    private func featureApplies(_ offer: FeatureOffer) -> Bool {
+        switch offer.id {
+        case "claude-agent": return AgentHooks.claudeFound && !agents.claudeConnected
+        default: return true
+        }
+    }
+
+    func acceptFeature(_ offer: FeatureOffer) {
+        switch offer.id {
+        case "claude-agent": agents.setClaude(true)   // the card itself is the consent
+        default: break
+        }
+    }
+
     var currentSize: CGSize {
         if prompter.isRunning { return prompterSize }
+        if card != nil { return cardSize }
         if expanded { return expandedSize }
         if peek != nil { return peekSize }
         return collapsedSize
@@ -497,11 +548,12 @@ final class IslandModel: ObservableObject {
     func tick() {
         let now = Date()
         // Publishing `now` redraws the island, so only do it when something visible uses the time.
-        if expanded || peek != nil || prompter.isRunning || timer.isActive || !builds.running.isEmpty {
+        if expanded || peek != nil || prompter.isRunning || timer.isActive || !builds.running.isEmpty || !agents.working.isEmpty {
             system.now = now
         }
         timer.check(now)
         builds.pruneDead()
+        agents.prune(now)
         // Dev servers are only scanned while that tab is on screen.
         if expanded && (tab == .dev || (tab == .home && homePanel == .qr && phoneMode == .send)) && Int(now.timeIntervalSince1970) % 3 == 0 {
             devServers.refresh()

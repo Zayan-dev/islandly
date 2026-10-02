@@ -115,6 +115,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hoverChangedAt = nil
             return
         }
+        // A card (permission request, update, what's new) stays open by itself until it's answered;
+        // hovering only makes it clickable.
+        if model.card != nil {
+            if model.expanded { model.expanded = false }
+            let size = model.cardSize
+            let rect = NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
+                              width: size.width, height: size.height + 2)
+            panel.ignoresMouseEvents = !rect.contains(NSEvent.mouseLocation)
+            return
+        }
         // While the teleprompter runs it stays open by itself; hovering only reveals its controls.
         if model.prompter.isRunning {
             if model.expanded { model.expanded = false }
@@ -151,6 +161,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// Hook mode, run by Claude Code / Codex: hand the event to the running island (and wait for an answer if asked).
+if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--agent-hook" {
+    AgentHookClient.run(Array(CommandLine.arguments.dropFirst(2)))
+}
+
 // CLI mode, used by the `notch` command: post a build event to the running island and exit.
 if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--notify" {
     BuildNotifier.post(Array(CommandLine.arguments.dropFirst(2)))
@@ -162,3 +177,4 @@ let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
+

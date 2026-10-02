@@ -27,6 +27,7 @@ live build status, screen tools and more. Native Swift & SwiftUI, 100% on-device
 | 🖥️ **Dev servers** | Everything you're serving on local ports: Django, Next.js, Vite, Postgres, SSH tunnels… Open one in the browser, or stop a stuck one. Only scanned while the tab is open. |
 | 🔤 **Grab Text** | Drag a box over anything on screen (video, image, PDF, screen share) and its text is copied. Reads QR codes too. |
 | 📱 **Phone** | One tile, three modes. **Send**: whatever you copied, or a running dev server's network URL, as a QR code. **Receive**: scan a code and send photos, files or text from any phone (iPhone or Android) to the Shelf. **Sign**: sign with your finger on the phone; a transparent signature lands on the Mac's clipboard, ready to paste into any PDF or doc. |
+| 🤖 **Coding agents** | **Claude Code** (terminal, VS Code / JetBrains extensions, the Claude desktop Code tab) shows what it's doing beside the notch, says when it's done or needs you, and its **permission requests appear in the notch: Allow / Deny right there**. **Codex** gets a heads-up when a task finishes. Turn on with right-click the notch → **Show Claude Code in the Notch**. |
 | 🎨 **Pick Color** · 🌙 **Dark Mode** | Sample any pixel as a hex code; toggle system appearance. |
 | ⏱️ **Timers** | Quick focus timers with a countdown ring beside the notch. |
 | 🗂️ **Shelf** · 📋 **Clipboard** | Drop files on the notch to park them; your last 25 copied texts, one click to copy again. |
@@ -151,6 +152,9 @@ Output, colors and exit codes pass through unchanged — you get a ✅ or ❌ wi
   a `git fetch` from GitHub a few times a day, which sends nothing about you (right-click the notch to turn it off).
 - Islandly opens **no network ports** except while **Phone ▸ Receive** is showing: then a small upload page is served on your
   Wi-Fi at a random one-time link (every other path returns 404; files up to 2 GB; stops after 10 idle minutes).
+- Coding agents (off until you turn them on) talk to Islandly over a private socket only your user can open, never the network.
+  Permission requests you don't answer in the notch go back to the agent's own prompt; nothing is ever approved by itself.
+  Turning it off removes the hooks (your other hooks are untouched, and the original settings are kept as a backup).
 - Clipboard history lives in memory only and skips password-manager items.
 - Idle CPU is **under 1%**: hover is event-driven, and polling slows down while the island is closed.
 - Name Alert's optional "browser calls" detection is **off by default** (it checks browser tabs every 30 s).

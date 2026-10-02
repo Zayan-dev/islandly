@@ -16,11 +16,12 @@ final class UpdateModel: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+    /// The "update ready" card is showing (from a new version being found, or an update you started).
+    @Published private(set) var offer = false
     @Published var autoCheck: Bool {
         didSet { UserDefaults.standard.set(autoCheck, forKey: "updateAutoCheck") }
     }
-    /// Number of new changes: the first time a given upstream commit is found (announced once), or the result
-    /// of a check you started yourself (0 = up to date).
+    /// A check you started found nothing new (new versions show the update card instead).
     var onResult: ((Int) -> Void)?
 
     /// The git checkout Islandly was built from, if it can be found.
@@ -39,6 +40,13 @@ final class UpdateModel: ObservableObject {
 
     var canUpdate: Bool { repo != nil }
     var isAvailable: Bool { if case .available = state { return true }; return false }
+    var availableChanges: [String] { if case .available(_, let changes) = state { return changes }; return [] }
+
+    /// "Later" (or Close after a failure): the green arrow stays; the card comes back for the next new version.
+    func dismissOffer() {
+        offer = false
+        if case .failed = state { state = .idle; nextCheck = Date().addingTimeInterval(60) }
+    }
     var isUpdating: Bool { if case .updating = state { return true }; return false }
     /// The island shows its update button only when there's something to act on.
     var showsButton: Bool {
@@ -79,7 +87,7 @@ final class UpdateModel: ObservableObject {
                     let head = commits.first?.hash ?? ""
                     if userInitiated || UserDefaults.standard.string(forKey: "updateAnnounced") != head {
                         UserDefaults.standard.set(head, forKey: "updateAnnounced")
-                        self.onResult?(changes.count)
+                        self.offer = true
                     }
                 case .failure(let message):
                     // A background check failing (offline, etc.) isn't worth bothering anyone about.
@@ -92,6 +100,7 @@ final class UpdateModel: ObservableObject {
     /// Pull, rebuild, then hand over to install.sh, which replaces the app and relaunches it.
     func update() {
         guard let repo, !isUpdating else { return }
+        offer = true   // the card shows progress until the restart
         state = .updating("Downloading the latest version…")
         #if arch(arm64)
         let arch = "arm64"

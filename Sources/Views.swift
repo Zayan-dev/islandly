@@ -12,7 +12,9 @@ struct IslandView: View {
     var body: some View {
         let prompting = model.prompter.isRunning
         let glass = model.expanded && !prompting
-        let radius: CGFloat = prompting ? 26 : (model.expanded ? 34 : (model.peek != nil ? 24 : 10))
+        let card = prompting ? nil : model.card
+        let asking = card != nil
+        let radius: CGFloat = prompting || asking ? 26 : (model.expanded ? 34 : (model.peek != nil ? 24 : 10))
         let shape = UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
 
         VStack(spacing: 0) {
@@ -29,42 +31,7 @@ struct IslandView: View {
                     shape.fill(.black)
                 }
 
-                if prompting {
-                    PrompterView(model: model)
-                        .transition(.opacity)
-                } else if model.expanded {
-                    ExpandedView(model: model)
-                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
-                } else if let peek = model.peek {
-                    PeekView(model: model, peek: peek)
-                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
-                } else if model.closedIndicator != nil || model.showsClosedArtwork {
-                    // Only the edge tabs are visible; the middle of the island sits under the notch.
-                    HStack(spacing: 0) {
-                        if model.showsClosedArtwork, let track = model.media.track {
-                            Artwork(model: model, track: track, size: 20)
-                                .frame(width: IslandModel.indicatorPeek)
-                                .padding(.leading, 2)
-                        }
-                        Spacer(minLength: 0)
-                        if let indicator = model.closedIndicator {
-                        Group {
-                            switch indicator {
-                            case .wave:
-                                ClosedWave()
-                            case .receiving:
-                                Image(systemName: "iphone.and.arrow.forward")
-                                    .foregroundStyle(.teal)
-                            }
-                        }
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: IslandModel.indicatorPeek)
-                        .padding(.trailing, 2)
-                        }
-                    }
-                    .frame(maxHeight: .infinity)
-                    .transition(.opacity)
-                }
+                IslandContent(model: model, prompting: prompting, card: card)
             }
             .overlay {
                 shape.fill(Color.purple).opacity(model.mentionFlash ? 0.85 : 0)
@@ -103,6 +70,26 @@ struct IslandView: View {
                     Text(updates.versionLabel)
                     Divider()
                 }
+                let agents = model.agents
+                Toggle("Show Claude Code in the Notch", isOn: Binding(get: { agents.claudeConnected }, set: { on in
+                    if !on { agents.setClaude(false); return }
+                    if AgentHooks.confirm("Show Claude Code in the notch?",
+                                          "Islandly adds hooks to ~/.claude/settings.json (a backup is saved next to it). Claude Code in the terminal, IDE extensions and the Claude desktop Code tab will then show what it's doing beside the notch, and you can answer permission requests here.\n\nThe hooks only talk to Islandly on this Mac. Turn this off any time to remove them.",
+                                          button: "Connect") {
+                        agents.setClaude(true)
+                    }
+                }))
+                if AgentHooks.codexFound || agents.codexConnected {
+                    Toggle("Show Codex in the Notch", isOn: Binding(get: { agents.codexConnected }, set: { on in
+                        if !on { agents.setCodex(false); return }
+                        if AgentHooks.confirm("Show Codex in the notch?",
+                                              "Islandly adds a notify line to ~/.codex/config.toml, so you get a heads-up in the notch when Codex finishes a task. Turn this off any time to remove it.",
+                                              button: "Connect") {
+                            agents.setCodex(true)
+                        }
+                    }))
+                }
+                Divider()
                 Button("Restart Islandly") { relaunchApp() }
                 Button("Quit Islandly") { NSApp.terminate(nil) }
             }
@@ -119,10 +106,74 @@ struct IslandView: View {
         .animation(spring, value: model.prompter.isRunning)
         .animation(.easeInOut(duration: 0.3), value: model.mentionFlash)
         .animation(spring, value: model.builds.running.count)
+        .animation(spring, value: model.card)
+        .animation(spring, value: model.agents.working.count)
         .onChange(of: model.dropTargeted) { _, targeted in
             if targeted { model.tab = .shelf }
         }
         .environment(\.colorScheme, .dark)
+    }
+}
+
+/// What's inside the island right now: teleprompter, a card, the open island, a peek, or the closed tabs.
+struct IslandContent: View {
+    @ObservedObject var model: IslandModel
+    let prompting: Bool
+    let card: NotchCard?
+
+    var body: some View {
+        if prompting {
+            PrompterView(model: model)
+                .transition(.opacity)
+        } else if let card {
+            NotchCardView(model: model, card: card)
+                .id(card)
+                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+        } else if model.expanded {
+            ExpandedView(model: model)
+                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+        } else if let peek = model.peek {
+            PeekView(model: model, peek: peek)
+                .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
+        } else if model.closedIndicator != nil || model.showsClosedArtwork {
+            ClosedTabs(model: model)
+                .frame(maxHeight: .infinity)
+                .transition(.opacity)
+        }
+    }
+}
+
+/// The closed island: only the tabs past the notch's edges are visible (thumbnail left, indicator right).
+struct ClosedTabs: View {
+    @ObservedObject var model: IslandModel
+
+    var body: some View {
+        // Only the edge tabs are visible; the middle of the island sits under the notch.
+        HStack(spacing: 0) {
+            if model.showsClosedArtwork, let track = model.media.track {
+                Artwork(model: model, track: track, size: 20)
+                    .frame(width: IslandModel.indicatorPeek)
+                    .padding(.leading, 2)
+            }
+            Spacer(minLength: 0)
+            if let indicator = model.closedIndicator {
+            Group {
+                switch indicator {
+                case .wave:
+                    ClosedWave()
+                case .receiving:
+                    Image(systemName: "iphone.and.arrow.forward")
+                        .foregroundStyle(.teal)
+                case .agent(let waiting):
+                    Image(systemName: waiting ? "hand.raised.fill" : "sparkle")
+                        .foregroundStyle(waiting ? Color.orange : Color(red: 0.85, green: 0.47, blue: 0.34))
+                }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .frame(width: IslandModel.indicatorPeek)
+            .padding(.trailing, 2)
+            }
+        }
     }
 }
 
@@ -289,6 +340,24 @@ struct PeekView: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+
+            case .agentDone(let agent, let source, let project, let detail):
+                AgentBadge(source: source, size: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(agent) finished · \(project)").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+
+            case .agentWaiting(let agent, let source, let project, let message):
+                AgentBadge(source: source, size: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(agent) needs you · \(project)").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(message).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
 
             case .update(let count):
                 Image(systemName: count > 0 ? "arrow.down.circle.fill" : "checkmark.circle.fill")
@@ -558,6 +627,9 @@ struct HomeView: View {
                 }
                 ForEach(model.builds.running.prefix(2)) { activity in
                     BuildChip(model: model, activity: activity)
+                }
+                ForEach(model.agents.working.prefix(2)) { session in
+                    AgentChip(model: model, session: session)
                 }
                 NowPlayingCard(model: model)
                 if model.media.sources.count > 1 {
