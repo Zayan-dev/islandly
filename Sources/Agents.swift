@@ -3,9 +3,9 @@ import SwiftUI
 
 // Coding agents in the notch: Claude Code (terminal, IDE extensions, the Claude desktop Code tab) and Codex.
 //
-// Claude Code runs `Islandly --agent-hook claude` from its hooks: what it's doing shows beside the notch, and when it
-// needs permission you can answer Allow / Deny right here. Codex runs `Islandly --agent-hook codex` from its
-// `notify` setting when a turn finishes. Everything travels over a private Unix socket (only your user can open it);
+// Claude Code and Codex run `Islandly --agent-hook claude|codex` from their hooks (same events, same answers):
+// what they're doing shows beside the notch, and when they need permission you can answer Allow / Deny right here.
+// (Older Codex installs connected through its `notify` setting, which only reports finished turns; still understood.) Everything travels over a private Unix socket (only your user can open it);
 // no network port. If Islandly isn't running, or you don't answer, the agent simply asks you itself as usual.
 
 // MARK: - Socket path
@@ -45,7 +45,7 @@ enum AgentHookClient {
             input = FileHandle.standardInput.readDataToEndOfFile()
         }
         guard let payload = try? JSONSerialization.jsonObject(with: input) as? [String: Any] else { exit(0) }
-        let wantsAnswer = source == "claude" && payload["hook_event_name"] as? String == "PermissionRequest"
+        let wantsAnswer = payload["hook_event_name"] as? String == "PermissionRequest"
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0, var addr = AgentSocket.address() else { exit(0) }
@@ -247,6 +247,7 @@ final class AgentHub: ObservableObject {
         if claudeConnected || codexConnected { server.start() }
         // A moved app gets its hook path fixed silently (only rewritten if the path changed).
         if claudeConnected, !AgentHooks.claudeUpToDate { try? AgentHooks.installClaude() }
+        if codexConnected, !AgentHooks.codexUpToDate { try? AgentHooks.installCodex() }
     }
 
     var working: [AgentSession] { sessions.filter { $0.state != .done } }
@@ -305,12 +306,14 @@ final class AgentHub: ObservableObject {
     private func handle(_ message: [String: Any], _ connection: AgentServer.Connection) {
         guard let payload = message["payload"] as? [String: Any] else { connection.finish(); return }
         let source = message["source"] as? String ?? "claude"
-        if source == "codex" { handleCodex(payload); return }
+        // Codex's older `notify` setting sends a different shape: just "a turn finished".
+        if source == "codex", payload["hook_event_name"] == nil { handleCodex(payload); return }
+        let agentName = source == "codex" ? "Codex" : "Claude"
 
         let event = payload["hook_event_name"] as? String ?? ""
         let id = payload["session_id"] as? String ?? "claude"
         let cwd = payload["cwd"] as? String ?? ""
-        let project = cwd.isEmpty ? "Claude" : (cwd as NSString).lastPathComponent
+        let project = cwd.isEmpty ? agentName : (cwd as NSString).lastPathComponent
         let now = Date()
 
         func update(_ change: (inout AgentSession) -> Void) {
@@ -326,7 +329,7 @@ final class AgentHub: ObservableObject {
         }
 
         // Answered in the agent itself: once the session moves on, its card in the notch is stale.
-        if ["PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd"].contains(event) {
+        if ["PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd", "Interrupt"].contains(event) {
             for request in requests where request.sessionID == id { request.connection.finish() }
             requests.removeAll { $0.sessionID == id }
         }
@@ -352,7 +355,7 @@ final class AgentHub: ObservableObject {
             let input = payload["tool_input"] as? [String: Any] ?? [:]
             let described = Self.describe(tool: tool, input: input)
             update { $0.state = .waiting; $0.activity = "Waiting: \(described.short)" }
-            let request = AgentRequest(sessionID: id, agentName: "Claude", project: project, tool: described.verb,
+            let request = AgentRequest(sessionID: id, agentName: agentName, project: project, tool: described.verb,
                                        detail: described.detail, connection: connection)
             connection.onClose = { [weak self] in
                 // The agent stopped waiting (you answered there, or it was interrupted).
@@ -362,7 +365,11 @@ final class AgentHub: ObservableObject {
             onRequest?()
         case "Stop":
             update { $0.state = .done; $0.activity = "Finished" }
-            if let s = sessions.first(where: { $0.id == id }) { onFinished?(s, nil) }
+            let summary = (payload["last_assistant_message"] as? String)?
+                .replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+            if let s = sessions.first(where: { $0.id == id }) { onFinished?(s, summary.map { String($0.prefix(140)) }) }
+        case "Interrupt":
+            update { $0.state = .done; $0.activity = "Stopped" }
         case "SessionEnd":
             sessions.removeAll { $0.id == id }
             requests.filter { $0.sessionID == id }.forEach { $0.connection.finish() }
@@ -391,8 +398,20 @@ final class AgentHub: ObservableObject {
         func file(_ key: String = "file_path") -> String { ((input[key] as? String) ?? "") as NSString as String }
         func name(_ path: String) -> String { (path as NSString).lastPathComponent }
         switch tool {
-        case "Bash":
-            let command = (input["command"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        case "apply_patch":
+            // Codex edits files with a patch; its header lines name the files ("*** Update File: path").
+            let patch = input.values.compactMap { $0 as? String }.joined(separator: "\n")
+            let files = patch.components(separatedBy: "\n").compactMap { line -> String? in
+                for prefix in ["*** Update File: ", "*** Add File: ", "*** Delete File: "] where line.hasPrefix(prefix) {
+                    return String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                }
+                return nil
+            }
+            let label = files.count == 1 ? name(files[0]) : (files.isEmpty ? "files" : "\(files.count) files")
+            return ("Editing \(label)", "edit \(label)", files.isEmpty ? String(patch.prefix(300)) : files.joined(separator: "\n"))
+        case "Bash", "shell", "local_shell", "exec_command":
+            let raw = input["command"] ?? input["cmd"]
+            let command = ((raw as? String) ?? (raw as? [String])?.joined(separator: " ") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let first = command.split(separator: "\n").first.map(String.init) ?? command
             return ("Running \(first.prefix(40))", "run a command", command)
         case "Edit", "MultiEdit":
@@ -430,6 +449,7 @@ enum AgentHooks {
     static let marker = "--agent-hook"
     static var claudeSettings: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json") }
     static var codexConfig: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml") }
+    static var codexHooks: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/hooks.json") }
     static var claudeFound: Bool { FileManager.default.fileExists(atPath: claudeSettings.deletingLastPathComponent().path) }
     static var codexFound: Bool { FileManager.default.fileExists(atPath: codexConfig.deletingLastPathComponent().path) }
 
@@ -444,6 +464,12 @@ enum AgentHooks {
         ("PermissionRequest", Int(AgentHookClient.answerTimeout) + 10), ("Stop", 5), ("SessionEnd", 5),
     ]
 
+    /// Codex fires the same events except Notification, plus Interrupt; SessionEnd hooks may take at most 3 s.
+    static let codexEvents: [(event: String, timeout: Int)] = [
+        ("SessionStart", 5), ("UserPromptSubmit", 5), ("PreToolUse", 5), ("PostToolUse", 5),
+        ("PermissionRequest", Int(AgentHookClient.answerTimeout) + 10), ("Stop", 5), ("Interrupt", 3), ("SessionEnd", 3),
+    ]
+
     static var claudeInstalled: Bool {
         guard let data = try? Data(contentsOf: claudeSettings), let text = String(data: data, encoding: .utf8) else { return false }
         return text.contains(marker)
@@ -454,23 +480,33 @@ enum AgentHooks {
             || (try? String(contentsOf: claudeSettings, encoding: .utf8))?.contains(command("claude")) == true
     }
 
+    /// Connected through hooks.json with this copy's path (not the old notify line, not a moved app).
+    static var codexUpToDate: Bool {
+        guard let text = try? String(contentsOf: codexHooks, encoding: .utf8) else { return false }
+        return text.contains(command("codex")) || text.contains(command("codex").replacingOccurrences(of: "/", with: "\\/"))
+    }
+
     static func installClaude() throws {
-        var settings = try readClaude()
-        var hooks = stripped(settings["hooks"] as? [String: Any] ?? [:])
-        for (event, timeout) in claudeEvents {
-            var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append(["hooks": [["type": "command", "command": command("claude"), "timeout": timeout]]])
-            hooks[event] = groups
-        }
-        settings["hooks"] = hooks
-        try writeClaude(settings)
+        var settings = try readJSON(claudeSettings)
+        settings["hooks"] = adding(claudeEvents, source: "claude", to: settings["hooks"] as? [String: Any] ?? [:])
+        try writeJSON(settings, to: claudeSettings)
     }
 
     static func uninstallClaude() throws {
-        var settings = try readClaude()
+        var settings = try readJSON(claudeSettings)
         let hooks = stripped(settings["hooks"] as? [String: Any] ?? [:])
         settings["hooks"] = hooks.isEmpty ? nil : hooks
-        try writeClaude(settings)
+        try writeJSON(settings, to: claudeSettings)
+    }
+
+    private static func adding(_ events: [(event: String, timeout: Int)], source: String, to existing: [String: Any]) -> [String: Any] {
+        var hooks = stripped(existing)
+        for (event, timeout) in events {
+            var groups = hooks[event] as? [[String: Any]] ?? []
+            groups.append(["hooks": [["type": "command", "command": command(source), "timeout": timeout]]])
+            hooks[event] = groups
+        }
+        return hooks
     }
 
     /// The user's hooks minus Islandly's (so installing twice never duplicates, and uninstalling leaves theirs).
@@ -491,52 +527,73 @@ enum AgentHooks {
         return out
     }
 
-    private static func readClaude() throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: claudeSettings), !data.isEmpty else { return [:] }
+    private static func readJSON(_ url: URL) throws -> [String: Any] {
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [:] }
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "~/.claude/settings.json isn't a JSON object."])
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "\(url.path) isn't a JSON object."])
         }
         return object
     }
 
-    private static func writeClaude(_ settings: [String: Any]) throws {
+    private static func writeJSON(_ object: [String: Any], to url: URL) throws {
         let fm = FileManager.default
-        try fm.createDirectory(at: claudeSettings.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let backup = claudeSettings.appendingPathExtension("islandly-backup")
-        if fm.fileExists(atPath: claudeSettings.path), !fm.fileExists(atPath: backup.path) {
-            try fm.copyItem(at: claudeSettings, to: backup)   // the original, before Islandly ever touched it
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let backup = url.appendingPathExtension("islandly-backup")
+        if fm.fileExists(atPath: url.path), !fm.fileExists(atPath: backup.path) {
+            try fm.copyItem(at: url, to: backup)   // the original, before Islandly ever touched it
         }
-        let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try data.write(to: claudeSettings, options: .atomic)
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: url, options: .atomic)
     }
 
-    // Codex: one `notify` line at the top of config.toml (it must come before any [table]).
+    // Codex: the same hooks, in ~/.codex/hooks.json. (Earlier versions of Islandly used a `notify` line in
+    // config.toml, which only reported finished turns; connecting again replaces it.)
 
     static var codexInstalled: Bool {
-        (try? String(contentsOf: codexConfig, encoding: .utf8))?.contains(marker) ?? false
+        let hooks = (try? String(contentsOf: codexHooks, encoding: .utf8))?.contains(marker) ?? false
+        let notify = (try? String(contentsOf: codexConfig, encoding: .utf8))?.contains(marker) ?? false
+        return hooks || notify
+    }
+
+    /// Hooks are on by default; someone may have switched them off in config.toml.
+    static var codexHooksDisabled: Bool {
+        guard let text = try? String(contentsOf: codexConfig, encoding: .utf8) else { return false }
+        var inFeatures = false
+        for line in text.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("[") { inFeatures = t == "[features]" }
+            if inFeatures, t.replacingOccurrences(of: " ", with: "").hasPrefix("hooks=false") { return true }
+        }
+        return false
     }
 
     static func installCodex() throws {
-        var text = (try? String(contentsOf: codexConfig, encoding: .utf8)) ?? ""
-        if text.contains(marker) { text = removingIslandlyNotify(text) }
-        if text.split(separator: "\n").contains(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("notify") }) {
-            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey:
-                "Codex already has a notify command in ~/.codex/config.toml. Islandly won't replace it; remove that line to connect."])
+        try removeLegacyNotify()
+        var file = try readJSON(codexHooks)
+        file["hooks"] = adding(codexEvents, source: "codex", to: file["hooks"] as? [String: Any] ?? [:])
+        try writeJSON(file, to: codexHooks)
+        if codexHooksDisabled {
+            alert("Codex hooks are switched off",
+                  "Islandly is connected, but ~/.codex/config.toml has hooks = false under [features]. Set it to true (or remove that line) for Codex to show up in the notch.")
         }
-        let exe = Bundle.main.executablePath ?? ""
-        let escaped = exe.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let line = "notify = [\"\(escaped)\", \"\(marker)\", \"codex\"]  # added by Islandly\n"
-        try FileManager.default.createDirectory(at: codexConfig.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try (line + text).write(to: codexConfig, atomically: true, encoding: .utf8)
     }
 
     static func uninstallCodex() throws {
-        guard let text = try? String(contentsOf: codexConfig, encoding: .utf8) else { return }
-        try removingIslandlyNotify(text).write(to: codexConfig, atomically: true, encoding: .utf8)
+        try removeLegacyNotify()
+        var file = try readJSON(codexHooks)
+        let hooks = stripped(file["hooks"] as? [String: Any] ?? [:])
+        file["hooks"] = hooks.isEmpty ? nil : hooks
+        if file.isEmpty, (try? Data(contentsOf: codexHooks.appendingPathExtension("islandly-backup"))) == nil {
+            try? FileManager.default.removeItem(at: codexHooks)   // we created it; leave nothing behind
+        } else {
+            try writeJSON(file, to: codexHooks)
+        }
     }
 
-    private static func removingIslandlyNotify(_ text: String) -> String {
-        text.components(separatedBy: "\n").filter { !($0.contains(marker) && $0.hasPrefix("notify")) }.joined(separator: "\n")
+    private static func removeLegacyNotify() throws {
+        guard let text = try? String(contentsOf: codexConfig, encoding: .utf8), text.contains(marker) else { return }
+        let kept = text.components(separatedBy: "\n").filter { !($0.contains(marker) && $0.hasPrefix("notify")) }
+        try kept.joined(separator: "\n").write(to: codexConfig, atomically: true, encoding: .utf8)
     }
 
     static func confirm(_ title: String, _ message: String, button: String) -> Bool {

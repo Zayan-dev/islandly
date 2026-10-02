@@ -358,6 +358,8 @@ final class IslandModel: ObservableObject {
     private func featureApplies(_ offer: FeatureOffer) -> Bool {
         switch offer.id {
         case "claude-agent": return AgentHooks.claudeFound && !agents.claudeConnected
+        // Also offered to people on the old notify-only connection, to move them to full hooks.
+        case "codex-agent": return AgentHooks.codexFound && !AgentHooks.codexUpToDate
         default: return true
         }
     }
@@ -365,6 +367,7 @@ final class IslandModel: ObservableObject {
     func acceptFeature(_ offer: FeatureOffer) {
         switch offer.id {
         case "claude-agent": agents.setClaude(true)   // the card itself is the consent
+        case "codex-agent": agents.setCodex(true)
         default: break
         }
     }

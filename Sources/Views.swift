@@ -83,7 +83,7 @@ struct IslandView: View {
                     Toggle("Show Codex in the Notch", isOn: Binding(get: { agents.codexConnected }, set: { on in
                         if !on { agents.setCodex(false); return }
                         if AgentHooks.confirm("Show Codex in the notch?",
-                                              "Islandly adds a notify line to ~/.codex/config.toml, so you get a heads-up in the notch when Codex finishes a task. Turn this off any time to remove it.",
+                                              "Islandly adds hooks to ~/.codex/hooks.json (a backup is saved next to it). Codex in the terminal, the Codex app and IDE extensions will then show what it's doing beside the notch, and you can answer its approval requests here.\n\nThe hooks only talk to Islandly on this Mac. Turn this off any time to remove them.",
                                               button: "Connect") {
                             agents.setCodex(true)
                         }

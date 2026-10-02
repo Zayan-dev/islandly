@@ -38,7 +38,7 @@ final class WhatsNewModel: ObservableObject {
     /// a title of a few words and one line under it.
     static let notes: [WhatsNewNote] = [
         WhatsNewNote(id: "2026-10-agents", symbol: "sparkle", tint: claudeOrange,
-                     title: "Claude Code in your notch", subtitle: "See what it's doing and Allow or Deny its requests here."),
+                     title: "Claude Code & Codex in your notch", subtitle: "See what they're doing and Allow or Deny requests here."),
         WhatsNewNote(id: "2026-09-name-alert-engine", symbol: "person.wave.2.fill", tint: .purple,
                      title: "Name Alert hears you better", subtitle: "A new speech engine catches your name 3× more often."),
         WhatsNewNote(id: "2026-09-updates", symbol: "arrow.down.circle.fill", tint: .green,
@@ -49,6 +49,9 @@ final class WhatsNewModel: ObservableObject {
         FeatureOffer(id: "claude-agent", symbol: "sparkle", tint: claudeOrange,
                      title: "Show Claude Code here?", subtitle: "Answer its permission requests from the notch.",
                      footnote: "Adds a hook to Claude's settings · undo any time", button: "Turn on"),
+        FeatureOffer(id: "codex-agent", symbol: "chevron.left.forwardslash.chevron.right", tint: Color(white: 0.45),
+                     title: "Show Codex here?", subtitle: "Answer its approval requests from the notch.",
+                     footnote: "Adds a hook to Codex's settings · undo any time", button: "Turn on"),
     ]
 
     @Published private(set) var seen: Set<String>
