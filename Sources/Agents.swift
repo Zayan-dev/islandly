@@ -37,6 +37,8 @@ enum AgentHookClient {
     /// `Islandly --agent-hook claude` (hook JSON on stdin) or `Islandly --agent-hook codex '<json>'`.
     /// Never fails loudly: any problem means "do nothing", so the agent carries on exactly as without Islandly.
     static func run(_ args: [String]) -> Never {
+        // Islandly's own "Hold ⌥ to Ask" runs Claude Code / Codex in the background; those aren't sessions to show.
+        if ProcessInfo.processInfo.environment["ISLANDLY_ASK"] != nil { exit(0) }
         let source = args.first ?? "claude"
         let input: Data
         if source == "codex", let json = args.last, args.count > 1 {
@@ -206,7 +208,8 @@ final class AgentServer {
 // MARK: - Model
 
 struct AgentSession: Identifiable, Equatable {
-    enum State: Equatable { case working, waiting, done }
+    /// idle: open but not doing anything (just started, or between prompts): never shown.
+    enum State: Equatable { case idle, working, waiting, done }
     let id: String
     let source: String          // "claude" / "codex"
     var project: String
@@ -250,7 +253,8 @@ final class AgentHub: ObservableObject {
         if codexConnected, !AgentHooks.codexUpToDate { try? AgentHooks.installCodex() }
     }
 
-    var working: [AgentSession] { sessions.filter { $0.state != .done } }
+    /// Only sessions actually doing something (or waiting for you) appear in the island.
+    var working: [AgentSession] { sessions.filter { $0.state == .working || $0.state == .waiting } }
     var pending: AgentRequest? { requests.first }
 
     func refreshConnections() {
@@ -341,7 +345,7 @@ final class AgentHub: ObservableObject {
 
         switch event {
         case "SessionStart":
-            update { $0.state = .working; $0.activity = "Ready" }
+            update { $0.state = .idle; $0.activity = "Ready" }
         case "UserPromptSubmit":
             update { $0.state = .working; $0.activity = "Thinking…"; $0.startedAt = now }
         case "PreToolUse":

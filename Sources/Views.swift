@@ -70,6 +70,16 @@ struct IslandView: View {
                     Text(updates.versionLabel)
                     Divider()
                 }
+                let ask = model.ask
+                Toggle("Hold ⌥ to Ask \(ask.engine.name)", isOn: Binding(get: { ask.enabled }, set: { on in
+                    if on { ask.turnOn() } else { ask.enabled = false }
+                }))
+                if ask.available.count > 1 {
+                    Picker("Ask with", selection: Binding(get: { ask.engine }, set: { ask.engine = $0 })) {
+                        ForEach(ask.available, id: \.self) { Text($0.name).tag($0) }
+                    }
+                }
+                Divider()
                 let agents = model.agents
                 Toggle("Show Claude Code in the Notch", isOn: Binding(get: { agents.claudeConnected }, set: { on in
                     if !on { agents.setClaude(false); return }

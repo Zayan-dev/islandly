@@ -28,6 +28,7 @@ live build status, screen tools and more. Native Swift & SwiftUI, 100% on-device
 | 🔤 **Grab Text** | Drag a box over anything on screen (video, image, PDF, screen share) and its text is copied. Reads QR codes too. |
 | 📱 **Phone** | One tile, three modes. **Send**: whatever you copied, or a running dev server's network URL, as a QR code. **Receive**: scan a code and send photos, files or text from any phone (iPhone or Android) to the Shelf. **Sign**: sign with your finger on the phone; a transparent signature lands on the Mac's clipboard, ready to paste into any PDF or doc. |
 | 🤖 **Coding agents** | **Claude Code** and **Codex** (terminal, VS Code / JetBrains / Antigravity extensions, the Claude desktop Code tab, the Codex app) show what they're doing beside the notch and say when they're done, and their **permission requests appear in the notch: Allow / Deny right there**. Turn on from the card Islandly offers, or right-click the notch → **Show Claude Code / Codex in the Notch**. [Setup →](#coding-agents-claude-code--codex) |
+| ⌥ **Hold to ask** | Like asking a friend who can see your screen: point at anything, **hold Option and ask out loud** ("why is this failing?"), let go. **Claude or Codex answers in a bubble at your cursor and reads it to you**; hold ⌥ by the bubble to reply by voice. Uses your own Claude Code / Codex login; off until you turn it on (right-click the notch → **Hold ⌥ to Ask**). |
 | 🎨 **Pick Color** · 🌙 **Dark Mode** | Sample any pixel as a hex code; toggle system appearance. |
 | ⏱️ **Timers** | Quick focus timers with a countdown ring beside the notch. |
 | 🗂️ **Shelf** · 📋 **Clipboard** | Drop files on the notch to park them; your last 25 copied texts, one click to copy again. |
@@ -192,6 +193,9 @@ extensions).
   a `git fetch` from GitHub a few times a day, which sends nothing about you (right-click the notch to turn it off).
 - Islandly opens **no network ports** except while **Phone ▸ Receive** is showing: then a small upload page is served on your
   Wi-Fi at a random one-time link (every other path returns 404; files up to 2 GB; stops after 10 idle minutes).
+- **Hold ⌥ to Ask** is the one feature that sends screen content off your Mac: when you let go, the highlighted area
+  (a screenshot and its text) and your question's words go to Anthropic or OpenAI through your own Claude Code / Codex
+  account. Your voice is transcribed on your Mac and never sent; answers are read aloud by the Mac's own voices. Off by default.
 - Coding agents (off until you turn them on) talk to Islandly over a private socket only your user can open, never the network.
   Permission requests you don't answer in the notch go back to the agent's own prompt; nothing is ever approved by itself.
   Turning it off removes the hooks (your other hooks are untouched, and the original settings are kept as a backup).

@@ -68,6 +68,7 @@ final class IslandModel: ObservableObject {
     let receiver = PhoneReceiver()
     let updates = UpdateModel()
     let agents = AgentHub()
+    let ask = AskModel()
 
     @Published private(set) var hint: Hint?
     @Published var expanded = false {
@@ -119,7 +120,7 @@ final class IslandModel: ObservableObject {
             system.objectWillChange, media.objectWillChange, timer.objectWillChange,
             clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange,
             stats.objectWillChange, actions.objectWillChange, availability.objectWillChange, devServers.objectWillChange, receiver.objectWillChange,
-            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange,
+            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange, ask.objectWillChange,
         ]
         for child in children {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -360,6 +361,7 @@ final class IslandModel: ObservableObject {
         case "claude-agent": return AgentHooks.claudeFound && !agents.claudeConnected
         // Also offered to people on the old notify-only connection, to move them to full hooks.
         case "codex-agent": return AgentHooks.codexFound && !AgentHooks.codexUpToDate
+        case "ask-ai": return !ask.enabled && !ask.available.isEmpty
         default: return true
         }
     }
@@ -368,6 +370,7 @@ final class IslandModel: ObservableObject {
         switch offer.id {
         case "claude-agent": agents.setClaude(true)   // the card itself is the consent
         case "codex-agent": agents.setCodex(true)
+        case "ask-ai": ask.turnOn()
         default: break
         }
     }

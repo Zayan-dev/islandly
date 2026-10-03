@@ -37,6 +37,8 @@ final class WhatsNewModel: ObservableObject {
     /// Newest first. Ids must never change: they record what someone has already seen. Keep each one short:
     /// a title of a few words and one line under it.
     static let notes: [WhatsNewNote] = [
+        WhatsNewNote(id: "2026-10-hold-option-ask", symbol: "option", tint: .indigo,
+                     title: "Hold ⌥ and ask out loud", subtitle: "Point at anything and ask: Claude or Codex answers right there, out loud."),
         WhatsNewNote(id: "2026-10-agents", symbol: "sparkle", tint: claudeOrange,
                      title: "Claude Code & Codex in your notch", subtitle: "See what they're doing and Allow or Deny requests here."),
         WhatsNewNote(id: "2026-09-name-alert-engine", symbol: "person.wave.2.fill", tint: .purple,
@@ -46,6 +48,9 @@ final class WhatsNewModel: ObservableObject {
     ]
 
     static let features: [FeatureOffer] = [
+        FeatureOffer(id: "ask-ai", symbol: "option", tint: .indigo,
+                     title: "Ask about anything on screen?", subtitle: "Point, hold Option, ask out loud: the answer is read back to you.",
+                     footnote: "Uses your Claude Code or Codex · sends only what you point at", button: "Turn on"),
         FeatureOffer(id: "claude-agent", symbol: "sparkle", tint: claudeOrange,
                      title: "Show Claude Code here?", subtitle: "Answer its permission requests from the notch.",
                      footnote: "Adds a hook to Claude's settings · undo any time", button: "Turn on"),
