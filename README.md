@@ -27,7 +27,7 @@ live build status, screen tools and more. Native Swift & SwiftUI, 100% on-device
 | 🖥️ **Dev servers** | Everything you're serving on local ports: Django, Next.js, Vite, Postgres, SSH tunnels… Open one in the browser, or stop a stuck one. Only scanned while the tab is open. |
 | 🔤 **Grab Text** | Drag a box over anything on screen (video, image, PDF, screen share) and its text is copied. Reads QR codes too. |
 | 📱 **Phone** | One tile, three modes. **Send**: whatever you copied, or a running dev server's network URL, as a QR code. **Receive**: scan a code and send photos, files or text from any phone (iPhone or Android) to the Shelf. **Sign**: sign with your finger on the phone; a transparent signature lands on the Mac's clipboard, ready to paste into any PDF or doc. |
-| 🤖 **Coding agents** | **Claude Code** and **Codex** (terminal, VS Code / JetBrains / Antigravity extensions, the Claude desktop Code tab, the Codex app) show what they're doing beside the notch and say when they're done, and their **permission requests appear in the notch: Allow / Deny right there**. Turn on from the card Islandly offers, or right-click the notch → **Show Claude Code / Codex in the Notch**. |
+| 🤖 **Coding agents** | **Claude Code** and **Codex** (terminal, VS Code / JetBrains / Antigravity extensions, the Claude desktop Code tab, the Codex app) show what they're doing beside the notch and say when they're done, and their **permission requests appear in the notch: Allow / Deny right there**. Turn on from the card Islandly offers, or right-click the notch → **Show Claude Code / Codex in the Notch**. [Setup →](#coding-agents-claude-code--codex) |
 | 🎨 **Pick Color** · 🌙 **Dark Mode** | Sample any pixel as a hex code; toggle system appearance. |
 | ⏱️ **Timers** | Quick focus timers with a countdown ring beside the notch. |
 | 🗂️ **Shelf** · 📋 **Clipboard** | Drop files on the notch to park them; your last 25 copied texts, one click to copy again. |
@@ -143,6 +143,46 @@ notch git push
 ```
 Output, colors and exit codes pass through unchanged — you get a ✅ or ❌ with the error line when it finishes.
 
+## Coding agents (Claude Code & Codex)
+
+See what your coding agent is doing beside the notch, get a pop-up when it's done, and answer its **permission
+requests right in the notch: Allow / Deny**, without switching windows. Works with Claude Code (terminal, VS Code /
+JetBrains / Antigravity extensions, the Claude desktop Code tab) and Codex (terminal, the ChatGPT / Codex app, IDE
+extensions).
+
+| While it… | You see |
+|---|---|
+| works | its icon beside the closed notch, and a row on the Home tab ("Codex · api-server · Editing App.tsx · 2m") |
+| needs permission | a card under the notch with the exact command or file: **Allow** · **Deny** · **Answer in Claude/Codex** |
+| finishes | "Codex finished · api-server" with its last message |
+
+### Turn it on
+
+**Claude Code**
+1. After updating, Islandly shows a **"Show Claude Code here?"** card. Click **Turn on**.
+   (Missed it? Right-click the notch → **Show Claude Code in the Notch**.)
+2. Start a **new** Claude Code session. Sessions that were already open don't load new hooks.
+
+**Codex** (one extra step: Codex asks you to approve new hooks once)
+1. Click **Turn on** on the **"Show Codex here?"** card, or right-click the notch → **Show Codex in the Notch**.
+2. Click **Open Review**: Terminal opens Codex, which lists Islandly's hooks. **Approve them**, then quit with
+   **Ctrl+C** twice. (Or run `codex` in any terminal yourself.)
+3. **Restart the Codex app** (⌘Q, reopen) and/or **reload your IDE window** (⌘⇧P → *Developer: Reload Window*):
+   Codex only reads approvals when it starts.
+4. Start a **new chat**.
+
+> Codex's hooks need Codex 0.145 or newer. The approval is saved in `~/.codex/config.toml` and covers the Codex
+> app, IDE extensions and the terminal at once.
+
+### How it works, and what it changes
+
+- Turning it on adds Islandly's hooks to `~/.claude/settings.json` or `~/.codex/hooks.json`. Your own hooks are
+  kept, and the original file is backed up next to it (`*.islandly-backup`). Turning it off removes only Islandly's.
+- The hooks talk to Islandly over a private Unix socket only your user can open, never the network.
+- **Nothing is ever approved on its own.** If you don't answer in the notch, the agent's own prompt takes over
+  (after about 2 minutes, or right away with **Answer in…**). Answering in the agent instead closes the card.
+- If Islandly isn't running, the hooks exit instantly and the agent behaves exactly as without it.
+
 ## Privacy & performance
 
 - **Everything runs on your Mac.** Speech is transcribed on-device with Apple's SpeechTranscriber (the first time,
@@ -169,6 +209,9 @@ Output, colors and exit codes pass through unchanged — you get a ✅ or ❌ wi
 | Grab Text says "Nothing readable found" | Grant **Screen & System Audio Recording**, then **Restart Islandly** |
 | Permissions keep resetting after each build | Create the `Islandly Dev` certificate (see above) |
 | Name Alert misses your name | Add the spellings it hears as keywords too (the panel shows "Hearing: …" live), plus nicknames. Similar-sounding capitalized words ("Zain" for "Zayan") already count |
+| Claude Code doesn't show in the notch | Right-click the notch → **Show Claude Code in the Notch** must be ticked; then start a **new** session |
+| Codex doesn't show in the notch | Approve Islandly's hooks once (run `codex` in Terminal, approve), then **restart the Codex app / reload the IDE window** and start a new chat. Check `codex --version` is 0.145+ |
+| An Allow / Deny card stays after answering in the agent | Update Islandly (fixed); the card now closes as soon as the agent moves on |
 | Island stuck or misbehaving | Right-click the notch → **Restart Islandly**, or `pkill -x Islandly; open -a Islandly` |
 | `notch: command not found` | Run the PATH line printed at the end of `install.sh`, or open a new terminal |
 
