@@ -27,6 +27,7 @@ final class PrompterModel: ObservableObject {
 
     private var normalized: [String] = []
     private var autoTimer: Timer?
+    private var escTimer: Timer?
     private let engine = AVAudioEngine()
     private let transcriber = LiveTranscriber()
 
@@ -87,6 +88,20 @@ final class PrompterModel: ObservableObject {
         isPaused = false
         countdown = 3
         tickCountdown()
+        watchEscape()
+    }
+
+    /// Esc stops the prompter. Read from the key state (like Ask), so no Accessibility permission is needed.
+    private func watchEscape() {
+        escTimer?.invalidate()
+        var wasDown = true   // ignore an Esc that's already held when it starts
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            let down = CGEventSource.keyState(.combinedSessionState, key: 53)
+            if down && !wasDown { self?.stop() }
+            wasDown = down
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        escTimer = timer
     }
 
     private func tickCountdown() {
@@ -127,6 +142,8 @@ final class PrompterModel: ObservableObject {
         countdown = nil
         hovering = false
         autoTimer?.invalidate()
+        escTimer?.invalidate()
+        escTimer = nil
         stopListening()
     }
 
@@ -234,11 +251,14 @@ struct PrompterView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .offset(y: -CGFloat(current) * PrompterModel.lineHeight)
                 .animation(.easeInOut(duration: 0.35), value: current)
+                // A fixed window of lines below the notch: the full script is taller than the island, and an
+                // unbounded stack gets centered, which pushed the current line up behind the notch.
+                .frame(height: PrompterModel.lineHeight * CGFloat(PrompterModel.visibleLines), alignment: .top)
+                .clipped()
+                .mask(LinearGradient(colors: [.black, .black, .black.opacity(0.2)], startPoint: .top, endPoint: .bottom))
                 .padding(.horizontal, 28)
                 .padding(.top, model.notchSize.height + 6)
                 .frame(maxHeight: .infinity, alignment: .top)
-                .clipped()
-                .mask(LinearGradient(colors: [.black, .black, .black.opacity(0.2)], startPoint: .top, endPoint: .bottom))
 
                 if prompter.position >= prompter.words.count {
                     Label("End of script", systemImage: "checkmark.circle.fill")
@@ -267,7 +287,7 @@ struct PrompterView: View {
                         IconButton(symbol: "chevron.up", help: "Back a line") { prompter.nudge(lines: -1) }
                         IconButton(symbol: "chevron.down", help: "Forward a line") { prompter.nudge(lines: 1) }
                         IconButton(symbol: prompter.isPaused ? "play.fill" : "pause.fill", help: "Pause") { prompter.togglePause() }
-                        IconButton(symbol: "xmark", help: "Stop") { prompter.stop() }
+                        IconButton(symbol: "xmark", help: "Stop (Esc)") { prompter.stop() }
                     }
                     .transition(.opacity)
                 }
@@ -275,6 +295,7 @@ struct PrompterView: View {
             .frame(height: model.notchSize.height)
             .padding(.horizontal, 18)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.easeOut(duration: 0.15), value: prompter.hovering)
     }
 

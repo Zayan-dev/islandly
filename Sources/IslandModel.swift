@@ -102,6 +102,10 @@ final class IslandModel: ObservableObject {
     @Published var peek: Peek?
     @Published var dropTargeted = false
     @Published var notchSize = CGSize(width: 180, height: 32)
+    /// Keep every Islandly window out of screen sharing, screenshots and recordings (on by default).
+    @Published var hiddenFromScreenShare = UserDefaults.standard.object(forKey: "hideFromScreenShare") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(hiddenFromScreenShare, forKey: "hideFromScreenShare") }
+    }
     /// While a screen tool (color sampler, capture crosshair) is active the island stays out of the way.
     @Published var suppressHover = false
     /// Last QR scanned from the screen (shown in the QR Beam panel instead of the clipboard).

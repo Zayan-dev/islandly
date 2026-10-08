@@ -36,6 +36,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         layout()
         panel.orderFrontRegardless()
 
+        // Unless turned off (right-click the notch), Islandly never shows up in screen sharing or recordings (Teams, Zoom, Meet in the browser…): the people
+        // on the call don't see the notch open, the teleprompter, or any other Islandly window. Checked after every
+        // event-loop pass, so windows opened later (script editor, Ask bubble) are hidden before they're drawn.
+        hideFromCapture()
+        NotificationCenter.default.addObserver(forName: NSApplication.didUpdateNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.hideFromCapture()
+        }
+
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in self?.layout() }
 
@@ -85,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.model.system.refreshBattery()
             self?.model.calendar.refresh()
         }
+    }
+
+    private func hideFromCapture() {
+        let sharing: NSWindow.SharingType = model.hiddenFromScreenShare ? .none : .readOnly
+        for window in NSApp.windows where window.sharingType != sharing { window.sharingType = sharing }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

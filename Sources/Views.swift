@@ -100,6 +100,9 @@ struct IslandView: View {
                     }))
                 }
                 Divider()
+                Toggle("Hide Islandly When Sharing Screen", isOn: Binding(get: { model.hiddenFromScreenShare },
+                                                                      set: { model.hiddenFromScreenShare = $0 }))
+                Divider()
                 Button("Restart Islandly") { relaunchApp() }
                 Button("Quit Islandly") { NSApp.terminate(nil) }
             }
