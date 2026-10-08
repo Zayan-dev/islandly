@@ -42,8 +42,8 @@ struct IslandView: View {
                                                   startPoint: .bottom, endPoint: .top), lineWidth: 1)
                     .opacity(glass ? 1 : 0)
             }
-            .frame(width: model.currentSize.width + (model.mentionFlash ? 36 : 0),
-                   height: model.currentSize.height + (model.mentionFlash ? 6 : 0))
+            .frame(width: model.currentSize.width + (model.mentionFlash ? 36 : 0) + (model.stretching ? 70 : 0),
+                   height: model.currentSize.height + (model.mentionFlash ? 6 : 0) + (model.stretching ? 10 : 0))
             .clipShape(shape)
             .offset(x: model.islandOffsetX)
             .overlay {
@@ -99,6 +99,14 @@ struct IslandView: View {
                         }
                     }))
                 }
+                if GitHubCI.available {
+                    let ci = model.ci
+                    Toggle(ci.needsLogin && ci.enabled ? "Show GitHub CI (run “gh auth login” first)" : "Show GitHub CI in the Notch",
+                           isOn: Binding(get: { ci.enabled }, set: { ci.enabled = $0 }))
+                }
+                if LidModel.available {
+                    Toggle("Lid Easter Eggs", isOn: Binding(get: { model.lid.enabled }, set: { model.lid.enabled = $0 }))
+                }
                 Divider()
                 Toggle("Hide Islandly When Sharing Screen", isOn: Binding(get: { model.hiddenFromScreenShare },
                                                                       set: { model.hiddenFromScreenShare = $0 }))
@@ -121,6 +129,8 @@ struct IslandView: View {
         .animation(spring, value: model.builds.running.count)
         .animation(spring, value: model.card)
         .animation(spring, value: model.agents.working.count)
+        .animation(spring, value: model.ci.running.count)
+        .animation(.spring(response: 0.3, dampingFraction: 0.42), value: model.stretching)
         .onChange(of: model.dropTargeted) { _, targeted in
             if targeted { model.tab = .shelf }
         }
@@ -183,6 +193,8 @@ struct ClosedTabs: View {
                     } else {
                         AgentBadge(source: model.agents.working.first?.source ?? "claude", size: 16)
                     }
+                case .ci(let progress):
+                    CIRing(progress: progress)
                 }
             }
             .font(.system(size: 12, weight: .semibold))
@@ -387,6 +399,36 @@ struct PeekView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
+
+            case .lid(let lidPeek):
+                LidPeekContent(peek: lidPeek)
+
+            case .ciStarted(let run):
+                CIRing(progress: run.progress, size: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CI started · \(run.repoName)").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text("\(run.workflow) · \(run.branch)").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+
+            case .ci(let run):
+                Image(systemName: run.succeeded ? "checkmark.circle.fill" : (run.conclusion == "cancelled" ? "slash.circle.fill" : "xmark.octagon.fill"))
+                    .font(.system(size: 22))
+                    .foregroundStyle(run.succeeded ? .green : (run.conclusion == "cancelled" ? .gray : .red))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(run.succeeded ? "CI passed · \(run.repoName)" : "CI \(run.conclusion == "cancelled" ? "cancelled" : "failed") · \(run.repoName)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Text(run.succeeded || run.failedStep == nil ? "\(run.workflow) · \(run.branch)" : run.failedStep!)
+                        .font(.system(size: 11, design: run.succeeded ? .default : .monospaced))
+                        .foregroundStyle(run.succeeded ? Color.secondary : Color.red.opacity(0.9))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(formatDuration(run.duration))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
 
             case .qrScanned(let payload):
                 Image(systemName: "qrcode.viewfinder")
@@ -646,6 +688,9 @@ struct HomeView: View {
                 }
                 ForEach(model.agents.working.prefix(2)) { session in
                     AgentChip(model: model, session: session)
+                }
+                ForEach(model.ci.running.prefix(2)) { run in
+                    CIChip(model: model, run: run)
                 }
                 NowPlayingCard(model: model)
                 if model.media.sources.count > 1 {

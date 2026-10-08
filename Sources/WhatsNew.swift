@@ -37,6 +37,10 @@ final class WhatsNewModel: ObservableObject {
     /// Newest first. Ids must never change: they record what someone has already seen. Keep each one short:
     /// a title of a few words and one line under it.
     static let notes: [WhatsNewNote] = [
+        WhatsNewNote(id: "2026-10-github-ci", symbol: "checkmark.seal.fill", tint: .yellow,
+                     title: "GitHub CI in your notch", subtitle: "Push, and a ring fills while Actions runs. ✅ or ❌ with the failing step."),
+        WhatsNewNote(id: "2026-10-lid-eggs", symbol: "laptopcomputer", tint: .cyan,
+                     title: "Your lid does tricks now", subtitle: "Tilt the screen, open it all the way, or close it while music plays."),
         WhatsNewNote(id: "2026-10-hold-option-ask", symbol: "option", tint: .indigo,
                      title: "Hold ⌥ and ask out loud", subtitle: "Point at anything and ask: Claude or Codex answers right there, out loud."),
         WhatsNewNote(id: "2026-10-agents", symbol: "sparkle", tint: claudeOrange,

@@ -37,6 +37,9 @@ enum Peek: Equatable {
     case update(count: Int)
     case agentDone(agent: String, source: String, project: String, detail: String)
     case agentWaiting(agent: String, source: String, project: String, message: String)
+    case ci(CIRun)
+    case ciStarted(CIRun)
+    case lid(LidPeek)
 }
 
 /// What the footer caption is describing (native tooltips don't show in a non-activating panel).
@@ -69,6 +72,8 @@ final class IslandModel: ObservableObject {
     let updates = UpdateModel()
     let agents = AgentHub()
     let ask = AskModel()
+    let ci = GitHubCI()
+    let lid = LidModel()
 
     @Published private(set) var hint: Hint?
     @Published var expanded = false {
@@ -101,6 +106,8 @@ final class IslandModel: ObservableObject {
     private var swipeFired = false
     @Published var peek: Peek?
     @Published var dropTargeted = false
+    /// The island's springy "stretch" (lid opened, opened all the way).
+    @Published var stretching = false
     @Published var notchSize = CGSize(width: 180, height: 32)
     /// Keep every Islandly window out of screen sharing, screenshots and recordings (on by default).
     @Published var hiddenFromScreenShare = UserDefaults.standard.object(forKey: "hideFromScreenShare") as? Bool ?? true {
@@ -124,7 +131,7 @@ final class IslandModel: ObservableObject {
             system.objectWillChange, media.objectWillChange, timer.objectWillChange,
             clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange,
             stats.objectWillChange, actions.objectWillChange, availability.objectWillChange, devServers.objectWillChange, receiver.objectWillChange,
-            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange, ask.objectWillChange,
+            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange, ask.objectWillChange, ci.objectWillChange,
         ]
         for child in children {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -179,6 +186,26 @@ final class IslandModel: ObservableObject {
                                          message: message), duration: 8)
         }
         updates.onResult = { [weak self] count in self?.showPeek(.update(count: count), duration: 3) }
+        ci.onStart = { [weak self] run in self?.showPeek(.ciStarted(run), duration: 3) }
+        ci.onFinish = { [weak self] run in
+            NSSound(named: run.succeeded ? "Hero" : "Basso")?.play()
+            self?.showPeek(.ci(run), duration: run.succeeded ? 6 : 12)
+        }
+        lid.isPlaying = { [weak self] in self?.media.track?.isPlaying == true }
+        lid.onPeek = { [weak self] peek in
+            guard let self else { return }
+            switch peek {
+            case .welcome:
+                self.stretch()
+                self.showPeek(.lid(peek), duration: 3)
+            case .maxOpen:
+                self.stretch()
+                Haptics.tap()
+                self.showPeek(.lid(peek), duration: 2.5)
+            case .angle, .volume:
+                self.showPeek(.lid(peek), duration: 1.4)
+            }
+        }
     }
 
     // MARK: Hints (footer caption)
@@ -289,6 +316,7 @@ final class IslandModel: ObservableObject {
                 if media.sources.count > 1 { height += 12 + 38 }
                 height += CGFloat(min(builds.running.count, 2)) * (12 + 46)
                 height += CGFloat(min(agents.working.count, 2)) * (12 + 46)
+                height += CGFloat(min(ci.running.count, 2)) * (12 + 46)
             }
         case .timer: height = timer.isActive ? 172 : 162
         case .shelf: height = 184
@@ -307,12 +335,13 @@ final class IslandModel: ObservableObject {
     /// What the closed island shows while something is live. It stays exactly the notch; indicators peek out
     /// just past its edges (the notch itself is the camera cutout, so it can't show anything):
     /// the song's thumbnail on the left, the green wave (or the phone icon while Receive is open) on the right.
-    enum ClosedIndicator: Equatable { case wave, receiving, agent(waiting: Bool) }
+    enum ClosedIndicator: Equatable { case wave, receiving, agent(waiting: Bool), ci(Double) }
     static let indicatorPeek: CGFloat = 30
 
     var closedIndicator: ClosedIndicator? {
         if receiver.isRunning { return .receiving }  // an open port should never be invisible
         if agents.working.contains(where: { $0.state == .waiting }) { return .agent(waiting: true) }
+        if let run = ci.running.first { return .ci(run.progress) }
         if media.track?.isPlaying == true { return .wave }
         if !agents.working.isEmpty { return .agent(waiting: false) }
         return nil
@@ -539,6 +568,11 @@ final class IslandModel: ObservableObject {
 
     // MARK: Live activities
 
+    func stretch() {
+        stretching = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { [weak self] in self?.stretching = false }
+    }
+
     func flashPurple(duration: TimeInterval = 0.7) {
         mentionFlash = true
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in self?.mentionFlash = false }
@@ -558,11 +592,12 @@ final class IslandModel: ObservableObject {
     func tick() {
         let now = Date()
         // Publishing `now` redraws the island, so only do it when something visible uses the time.
-        if expanded || peek != nil || prompter.isRunning || timer.isActive || !builds.running.isEmpty || !agents.working.isEmpty {
+        if expanded || peek != nil || prompter.isRunning || timer.isActive || !builds.running.isEmpty || !agents.working.isEmpty || !ci.running.isEmpty {
             system.now = now
         }
         timer.check(now)
         builds.pruneDead()
+        ci.tick(now)
         agents.prune(now)
         // Dev servers are only scanned while that tab is on screen.
         if expanded && (tab == .dev || (tab == .home && homePanel == .qr && phoneMode == .send)) && Int(now.timeIntervalSince1970) % 3 == 0 {
