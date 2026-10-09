@@ -22,8 +22,10 @@ before writing code so we can agree on the approach.
 3. Keep changes focused — one fix or feature per pull request.
 4. Match the existing style: SwiftUI views in `Views.swift` / feature files, models as `ObservableObject`s,
    short doc comments on anything non-obvious.
-5. Check that idle CPU stays under ~1% (Activity Monitor) — Islandly lives on screen all day.
-6. Open the pull request with a clear description and screenshots or a GIF for UI changes.
+5. Check that idle CPU doesn't go up (Activity Monitor, Islandly idles around 1–2%): it lives on screen all day.
+6. New feature? Add a one-line note to `WhatsNewModel.notes` in `Sources/WhatsNew.swift` so people who update see it
+   once, and, if it needs switching on, a `FeatureOffer` card. Add it to the README's Features too.
+7. Open the pull request with a clear description and screenshots or a GIF for UI changes.
 
 ## Guidelines
 - **Privacy first:** everything stays on-device. No analytics, no network calls beyond what a feature strictly needs.
