@@ -5,12 +5,13 @@ import SwiftUI
 // MARK: - Island state
 
 enum IslandTab: String, CaseIterable {
-    case home, dev, timer, shelf, clipboard
+    case home, dev, timer, world, shelf, clipboard
 
     var symbol: String {
         switch self {
         case .home: return "music.note.house.fill"
         case .timer: return "timer"
+        case .world: return "globe"
         case .shelf: return "tray.full.fill"
         case .clipboard: return "list.clipboard.fill"
         case .dev: return "server.rack"
@@ -40,6 +41,7 @@ enum Peek: Equatable {
     case ci(CIRun)
     case ciStarted(CIRun)
     case lid(LidPeek)
+    case time(TimeConversion)
 }
 
 /// What the footer caption is describing (native tooltips don't show in a non-activating panel).
@@ -73,6 +75,7 @@ final class IslandModel: ObservableObject {
     let agents = AgentHub()
     let ask = AskModel()
     let ci = GitHubCI()
+    let worldClock = WorldClockModel()
     let lid = LidModel()
 
     @Published private(set) var hint: Hint?
@@ -131,7 +134,7 @@ final class IslandModel: ObservableObject {
             system.objectWillChange, media.objectWillChange, timer.objectWillChange,
             clipboard.objectWillChange, shelf.objectWillChange, calendar.objectWillChange,
             stats.objectWillChange, actions.objectWillChange, availability.objectWillChange, devServers.objectWillChange, receiver.objectWillChange,
-            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange, ask.objectWillChange, ci.objectWillChange,
+            prompter.objectWillChange, nameAlert.objectWillChange, builds.objectWillChange, updates.objectWillChange, agents.objectWillChange, whatsNew.objectWillChange, ask.objectWillChange, ci.objectWillChange, worldClock.objectWillChange,
         ]
         for child in children {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
@@ -186,6 +189,10 @@ final class IslandModel: ObservableObject {
                                          message: message), duration: 8)
         }
         updates.onResult = { [weak self] count in self?.showPeek(.update(count: count), duration: 3) }
+        clipboard.onText = { [weak self] text in
+            guard let self, let conversion = TimeConversion.parse(text, clocks: self.worldClock.zones) else { return }
+            self.showPeek(.time(conversion), duration: 8)
+        }
         ci.onStart = { [weak self] run in self?.showPeek(.ciStarted(run), duration: 3) }
         ci.onFinish = { [weak self] run in
             NSSound(named: run.succeeded ? "Hero" : "Basso")?.play()
@@ -256,6 +263,7 @@ final class IslandModel: ObservableObject {
             case .timer: return "Timer: countdowns that stay visible beside the notch."
             case .shelf: return "Shelf: drop files on the notch, drag them out anywhere later."
             case .clipboard: return "Clipboard: your last 25 copied texts, one click to copy again."
+            case .world: return "World Clock: your time and the cities you work with. Drag the slider to plan."
             case .dev: return "Dev: servers running on this Mac. Open one in the browser or on your phone, or stop a stuck one."
             }
         case .keepAwake:
@@ -321,6 +329,7 @@ final class IslandModel: ObservableObject {
         case .timer: height = timer.isActive ? 172 : 162
         case .shelf: height = 184
         case .clipboard: height = clipboard.items.isEmpty ? 142 : 290
+        case .world: height = notchSize.height + 8 + 52 + 8 + 24 + 8 + CGFloat(min(max(worldClock.zones.count, 1), 5)) * 44 + 8 + 24 + 16
         case .dev:
             if devServers.phone != nil {
                 height = notchSize.height + 8 + 22 + 8 + 122 + 16
@@ -376,6 +385,7 @@ final class IslandModel: ObservableObject {
     /// update that's ready, then (once) what's new and new features to switch on.
     var card: NotchCard? {
         if let request = agents.pending { return .agent(request.id) }
+        if ci.setup != nil { return .ciSetup }
         if updates.offer { return .update }
         if !whatsNew.unseenNotes.isEmpty { return .whatsNew }
         if let offer = whatsNew.nextFeature(applies: featureApplies) { return .feature(offer.id) }
@@ -395,6 +405,9 @@ final class IslandModel: ObservableObject {
         // Also offered to people on the old notify-only connection, to move them to full hooks.
         case "codex-agent": return AgentHooks.codexFound && !AgentHooks.codexUpToDate
         case "ask-ai": return !ask.enabled && !ask.available.isEmpty
+        // Developers only (they use git), and only when CI can't already show.
+        case "github-ci": return ci.enabled && ci.wantsSetup
+            && FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.gitconfig")
         default: return true
         }
     }
@@ -404,6 +417,7 @@ final class IslandModel: ObservableObject {
         case "claude-agent": agents.setClaude(true)   // the card itself is the consent
         case "codex-agent": agents.setCodex(true)
         case "ask-ai": ask.turnOn()
+        case "github-ci": ci.startSetup()
         default: break
         }
     }

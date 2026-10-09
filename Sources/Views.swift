@@ -99,10 +99,11 @@ struct IslandView: View {
                         }
                     }))
                 }
-                if GitHubCI.available {
-                    let ci = model.ci
-                    Toggle(ci.needsLogin && ci.enabled ? "Show GitHub CI (run “gh auth login” first)" : "Show GitHub CI in the Notch",
-                           isOn: Binding(get: { ci.enabled }, set: { ci.enabled = $0 }))
+                let ci = model.ci
+                if ci.wantsSetup {
+                    Button("Set Up GitHub CI in the Notch…") { ci.startSetup() }
+                } else {
+                    Toggle("Show GitHub CI in the Notch", isOn: Binding(get: { ci.enabled }, set: { ci.enabled = $0 }))
                 }
                 if LidModel.available {
                     Toggle("Lid Easter Eggs", isOn: Binding(get: { model.lid.enabled }, set: { model.lid.enabled = $0 }))
@@ -400,6 +401,24 @@ struct PeekView: View {
                 }
                 Spacer()
 
+            case .time(let conversion):
+                Image(systemName: "globe")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.cyan)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text("\(conversion.source)  →  \(conversion.local) \(conversion.localZone)")
+                            .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        if let day = conversion.localDay {
+                            Text(day).font(.system(size: 10, weight: .bold)).foregroundStyle(.black)
+                                .padding(.horizontal, 5).padding(.vertical, 1).background(Capsule().fill(.cyan))
+                        }
+                    }
+                    Text(conversion.others.isEmpty ? "In your time" : conversion.others.joined(separator: " · "))
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+
             case .lid(let lidPeek):
                 LidPeekContent(peek: lidPeek)
 
@@ -477,6 +496,7 @@ struct ExpandedView: View {
                 case .timer: TimerView(model: model)
                 case .shelf: ShelfView(model: model)
                 case .clipboard: ClipboardView(model: model)
+                case .world: WorldClockView(model: model)
                 case .dev: DevServersView(model: model)
                 }
             }

@@ -31,12 +31,15 @@ enum NotchCard: Hashable {
     case update
     case whatsNew
     case feature(String)
+    case ciSetup
 }
 
 final class WhatsNewModel: ObservableObject {
     /// Newest first. Ids must never change: they record what someone has already seen. Keep each one short:
     /// a title of a few words and one line under it.
     static let notes: [WhatsNewNote] = [
+        WhatsNewNote(id: "2026-10-world-clock", symbol: "globe", tint: .cyan,
+                     title: "World Clock", subtitle: "Your cities in the new 🌐 tab. Copy “3pm EST” and see it in your time."),
         WhatsNewNote(id: "2026-10-github-ci", symbol: "checkmark.seal.fill", tint: .yellow,
                      title: "GitHub CI in your notch", subtitle: "Push, and a ring fills while Actions runs. ✅ or ❌ with the failing step."),
         WhatsNewNote(id: "2026-10-lid-eggs", symbol: "laptopcomputer", tint: .cyan,
@@ -52,6 +55,9 @@ final class WhatsNewModel: ObservableObject {
     ]
 
     static let features: [FeatureOffer] = [
+        FeatureOffer(id: "github-ci", symbol: "checkmark.seal.fill", tint: .yellow,
+                     title: "Show GitHub CI here?", subtitle: "Push, and watch GitHub Actions run beside the notch. ✅ or ❌ when it's done.",
+                     footnote: "One click · you just sign in on github.com", button: "Set up"),
         FeatureOffer(id: "ask-ai", symbol: "option", tint: .indigo,
                      title: "Ask about anything on screen?", subtitle: "Point, hold Option, ask out loud: the answer is read back to you.",
                      footnote: "Uses your Claude Code or Codex · sends only what you point at", button: "Turn on"),
@@ -316,6 +322,8 @@ struct NotchCardView: View {
             UpdateOfferCard(model: model)
         case .whatsNew:
             WhatsNewCard(model: model)
+        case .ciSetup:
+            CISetupCard(model: model)
         case .feature(let id):
             if let offer = WhatsNewModel.features.first(where: { $0.id == id }) {
                 FeatureOfferCard(model: model, offer: offer)
